@@ -154,14 +154,85 @@ def fetch_prices(cfg, year: int, month: int):
     print(f"✅ Upserted {len(spot_rows)} spot price rows for {year}-{month:02d}")
 
 
+# ── Consumption CSV ──────────────────────────────────────────────────────────
+
+
+def parse_consumption_csv(fileobj) -> list[dict]:
+    """Parse the grid-operator CSV (Datum;von;bis;Verbrauch) into row dicts."""
+    reader = csv.DictReader(fileobj, delimiter=";")
+    rows = []
+    for row in reader:
+        row = {k.strip(): v.strip() for k, v in row.items() if k}
+        if not row.get("Datum") or not row.get("von") or not row.get("Verbrauch"):
+            continue
+        try:
+            consumed = float(row["Verbrauch"].replace(",", "."))
+            parts = row["Datum"].split(".")
+            # Handle DD.MM.YYYY or DD.MM.YY
+            year = parts[2] if len(parts[2]) == 4 else "20" + parts[2]
+            ts = f"{year}-{parts[1].zfill(2)}-{parts[0].zfill(2)}T{row['von']}"
+            # Normalise HH:MM → HH:MM:SS
+            if ts.count(":") == 1:
+                ts += ":00"
+            rows.append({"ts": ts, "consumed_kwh": consumed})
+        except (IndexError, ValueError):
+            continue
+    return rows
+
+
+def _compute_and_upsert_consumption(conn, rows: list[dict]) -> int:
+    """
+    For each consumption row, look up its spot_ct from readings,
+    compute cost_brutto using the applicable tariff, and upsert.
+    Returns the number of rows processed.
+    """
+    cur = conn.cursor(dictionary=True)
+    updated = 0
+    for row in rows:
+        ts_dt = datetime.fromisoformat(row["ts"])
+        cur.execute("SELECT spot_ct FROM readings WHERE ts = %s", (row["ts"],))
+        existing = cur.fetchone()
+        spot_ct = float(existing["spot_ct"]) if existing else 0.0
+
+        raw_tariff = get_tariff(conn, ts_dt)
+        tariff = {k: float(v) if hasattr(v, '__float__') and not isinstance(v, (str, bool, date))
+                  else v for k, v in raw_tariff.items()}
+        cost = calculate_cost_brutto(row["consumed_kwh"], spot_ct, tariff)
+
+        cur.execute(
+            """INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
+               VALUES (%s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE
+                   consumed_kwh = VALUES(consumed_kwh),
+                   cost_brutto  = VALUES(cost_brutto)""",
+            (row["ts"], row["consumed_kwh"], spot_ct, cost),
+        )
+        updated += 1
+    conn.commit()
+    cur.close()
+    return updated
+
+
+def import_csv(cfg, filepath: str):
+    print(f"⬇ Importing consumption CSV: {filepath}")
+    with open(filepath, newline="", encoding="utf-8-sig") as f:
+        rows = parse_consumption_csv(f)
+    if not rows:
+        print("⚠ No rows parsed from CSV.")
+        return
+    conn = get_db(cfg)
+    try:
+        n = _compute_and_upsert_consumption(conn, rows)
+        rebuild_daily_summary(conn)
+    finally:
+        conn.close()
+    print(f"✅ Imported {n} consumption rows")
+
+
 # ── Stubs for Tasks 5–6 ──────────────────────────────────────────────────────
 
 def fetch_consumption(cfg, year: int, month: int):
     pass  # implemented in Task 5
-
-
-def import_csv(cfg, file: str):
-    pass  # implemented in Task 6
 
 
 # ── CLI placeholder ──────────────────────────────────────────────────────────
