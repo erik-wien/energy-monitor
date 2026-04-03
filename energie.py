@@ -101,11 +101,60 @@ def calculate_cost_brutto(consumed_kwh: float, spot_ct: float, tariff: dict) -> 
     ) / 100
 
 
-# ── Stubs for Tasks 4–6 ──────────────────────────────────────────────────────
+# ── Spot Prices ──────────────────────────────────────────────────────────────
+
+import requests
+
+
+def parse_spot_json(data: dict) -> list[dict]:
+    """Extract list of {ts, spot_ct} from raw API response."""
+    rows = []
+    for row in data.get("data", []):
+        try:
+            ts  = row["from"]
+            ct  = float(row["price"])
+            rows.append({"ts": ts, "spot_ct": ct})
+        except (KeyError, ValueError):
+            continue
+    return rows
+
 
 def fetch_prices(cfg, year: int, month: int):
-    pass  # implemented in Task 4
+    url = (
+        f"https://www.hofer-grünstrom.at/service/energy-manager/spot-prices"
+        f"?year={year}&month={month}"
+    )
+    print(f"⬇ Fetching spot prices {year}-{month:02d} …")
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
 
+    # Save raw JSON (preserves existing file convention)
+    json_path = os.path.join(os.path.dirname(__file__), f"spotpreise_{year}_{month:02d}.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    spot_rows = parse_spot_json(data)
+    if not spot_rows:
+        print(f"⚠ No spot price rows for {year}-{month:02d}")
+        return
+
+    conn = get_db(cfg)
+    cur = conn.cursor()
+    cur.executemany(
+        """INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
+           VALUES (%(ts)s, 0, %(spot_ct)s, 0)
+           ON DUPLICATE KEY UPDATE spot_ct = VALUES(spot_ct)""",
+        spot_rows,
+    )
+    conn.commit()
+    count = cur.rowcount
+    cur.close()
+    conn.close()
+    print(f"✅ Upserted {count} spot price rows for {year}-{month:02d}")
+
+
+# ── Stubs for Tasks 5–6 ──────────────────────────────────────────────────────
 
 def fetch_consumption(cfg, year: int, month: int):
     pass  # implemented in Task 5
