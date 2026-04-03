@@ -4,6 +4,7 @@
 import argparse
 import configparser
 import csv
+import decimal
 import json
 import os
 import sys
@@ -172,7 +173,7 @@ def parse_consumption_csv(fileobj) -> list[dict]:
             year = parts[2] if len(parts[2]) == 4 else "20" + parts[2]
             ts = f"{year}-{parts[1].zfill(2)}-{parts[0].zfill(2)}T{row['von']}"
             # Normalise HH:MM → HH:MM:SS
-            if ts.count(":") == 1:
+            if row["von"].count(":") == 1:
                 ts += ":00"
             rows.append({"ts": ts, "consumed_kwh": consumed})
         except (IndexError, ValueError):
@@ -195,8 +196,8 @@ def _compute_and_upsert_consumption(conn, rows: list[dict]) -> int:
         spot_ct = float(existing["spot_ct"]) if existing else 0.0
 
         raw_tariff = get_tariff(conn, ts_dt)
-        tariff = {k: float(v) if hasattr(v, '__float__') and not isinstance(v, (str, bool, date))
-                  else v for k, v in raw_tariff.items()}
+        tariff = {k: float(v) if isinstance(v, decimal.Decimal) else v
+                  for k, v in raw_tariff.items()}
         cost = calculate_cost_brutto(row["consumed_kwh"], spot_ct, tariff)
 
         cur.execute(
@@ -232,7 +233,7 @@ def import_csv(cfg, filepath: str):
 # ── Stubs for Tasks 5–6 ──────────────────────────────────────────────────────
 
 def fetch_consumption(cfg, year: int, month: int):
-    pass  # implemented in Task 5
+    pass  # implemented in Task 6
 
 
 # ── CLI placeholder ──────────────────────────────────────────────────────────
