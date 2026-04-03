@@ -214,6 +214,28 @@ def _compute_and_upsert_consumption(conn, rows: list[dict]) -> int:
     return updated
 
 
+def parse_consumption_xlsx(filepath: str) -> list[dict]:
+    """Parse the Hofer portal XLSX download into row dicts."""
+    import openpyxl
+    import warnings
+    rows = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")   # suppress openpyxl stylesheet warnings
+        wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=4, values_only=True):   # skip 3 header rows
+        dt = row[0]
+        consumed = row[2]
+        if dt is None or consumed is None:
+            continue
+        try:
+            ts = dt.strftime("%Y-%m-%dT%H:%M:%S")
+            rows.append({"ts": ts, "consumed_kwh": float(consumed)})
+        except (AttributeError, ValueError):
+            continue
+    return rows
+
+
 def import_csv(cfg, filepath: str):
     print(f"⬇ Importing consumption CSV: {filepath}")
     with open(filepath, newline="", encoding="utf-8-sig") as f:
@@ -230,10 +252,76 @@ def import_csv(cfg, filepath: str):
     print(f"✅ Imported {n} consumption rows")
 
 
-# ── Stubs for Tasks 5–6 ──────────────────────────────────────────────────────
+# ── Playwright Scraper ───────────────────────────────────────────────────────
+
 
 def fetch_consumption(cfg, year: int, month: int):
-    pass  # implemented in Task 6
+    """Scrape monthly consumption XLSX from Hofer portal using Playwright."""
+    from playwright.sync_api import sync_playwright
+    import tempfile
+
+    username  = cfg["hofer"]["username"]
+    password  = cfg["hofer"]["password"]
+    meter_id  = cfg["hofer"]["meter_id"]
+    login_url = "https://www.hofer-grünstrom.at/steward/signin.html"
+    data_url  = (
+        f"https://www.hofer-grünstrom.at/app/portal/energymanager"
+        f"/{meter_id}/profile?year={year}&month={month}"
+    )
+
+    print(f"⬇ Scraping consumption {year}-{month:02d} via Playwright …")
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(accept_downloads=True)
+        page    = context.new_page()
+
+        # 1. Login
+        page.goto(login_url, wait_until="networkidle")
+        # Try common selectors for email/password — adjust if login fails
+        page.locator("input[type='email'], input[name='email'], input[name='username'], input[id*='email'], input[id*='user']").first.fill(username)
+        page.locator("input[type='password']").fill(password)
+        page.locator("button[type='submit'], button:has-text('Anmelden'), button:has-text('Login'), input[type='submit']").first.click()
+        page.wait_for_load_state("networkidle")
+
+        # 2. Navigate to energy manager profile for the requested month
+        page.goto(data_url, wait_until="networkidle")
+
+        # 3. Dismiss cookie consent popup if present (blocks click in headless)
+        try:
+            page.locator("#ppms_cm_agree-to-all").click(timeout=5000)
+            page.wait_for_selector("#ppms_cm_popup_overlay", state="hidden", timeout=10000)
+        except Exception:
+            pass  # popup not present or already dismissed
+
+        # 4. Click download button
+        with page.expect_download() as dl_info:
+            page.get_by_text("Ausgewählte Daten herunterladen").click()
+        download = dl_info.value
+
+        # 4. Save to temp file
+        suffix = ".xlsx"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+        download.save_as(tmp_path)
+        browser.close()
+
+    print(f"   Downloaded: {download.suggested_filename} → {tmp_path}")
+
+    rows = parse_consumption_xlsx(tmp_path)
+    os.unlink(tmp_path)
+
+    if not rows:
+        print(f"⚠ No rows parsed for {year}-{month:02d}")
+        return
+
+    conn = get_db(cfg)
+    try:
+        n = _compute_and_upsert_consumption(conn, rows)
+        rebuild_daily_summary(conn)
+    finally:
+        conn.close()
+    print(f"✅ Scraped and stored {n} consumption rows for {year}-{month:02d}")
 
 
 # ── CLI placeholder ──────────────────────────────────────────────────────────
