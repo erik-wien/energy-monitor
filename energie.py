@@ -10,6 +10,7 @@ import sys
 from datetime import datetime, date, timedelta
 
 import mysql.connector
+import requests
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -103,8 +104,6 @@ def calculate_cost_brutto(consumed_kwh: float, spot_ct: float, tariff: dict) -> 
 
 # ── Spot Prices ──────────────────────────────────────────────────────────────
 
-import requests
-
 
 def parse_spot_json(data: dict) -> list[dict]:
     """Extract list of {ts, spot_ct} from raw API response."""
@@ -140,18 +139,19 @@ def fetch_prices(cfg, year: int, month: int):
         return
 
     conn = get_db(cfg)
-    cur = conn.cursor()
-    cur.executemany(
-        """INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
-           VALUES (%(ts)s, 0, %(spot_ct)s, 0)
-           ON DUPLICATE KEY UPDATE spot_ct = VALUES(spot_ct)""",
-        spot_rows,
-    )
-    conn.commit()
-    count = cur.rowcount
-    cur.close()
-    conn.close()
-    print(f"✅ Upserted {count} spot price rows for {year}-{month:02d}")
+    try:
+        cur = conn.cursor()
+        cur.executemany(
+            """INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
+               VALUES (%(ts)s, 0, %(spot_ct)s, 0)
+               ON DUPLICATE KEY UPDATE spot_ct = VALUES(spot_ct)""",
+            spot_rows,
+        )
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
+    print(f"✅ Upserted {len(spot_rows)} spot price rows for {year}-{month:02d}")
 
 
 # ── Stubs for Tasks 5–6 ──────────────────────────────────────────────────────
