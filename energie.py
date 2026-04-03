@@ -273,43 +273,47 @@ def fetch_consumption(cfg, year: int, month: int):
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        context = browser.new_context(accept_downloads=True)
-        page    = context.new_page()
-
-        # 1. Login
-        page.goto(login_url, wait_until="networkidle")
-        # Try common selectors for email/password — adjust if login fails
-        page.locator("input[type='email'], input[name='email'], input[name='username'], input[id*='email'], input[id*='user']").first.fill(username)
-        page.locator("input[type='password']").fill(password)
-        page.locator("button[type='submit'], button:has-text('Anmelden'), button:has-text('Login'), input[type='submit']").first.click()
-        page.wait_for_load_state("networkidle")
-
-        # 2. Navigate to energy manager profile for the requested month
-        page.goto(data_url, wait_until="networkidle")
-
-        # 3. Dismiss cookie consent popup if present (blocks click in headless)
         try:
-            page.locator("#ppms_cm_agree-to-all").click(timeout=5000)
-            page.wait_for_selector("#ppms_cm_popup_overlay", state="hidden", timeout=10000)
-        except Exception:
-            pass  # popup not present or already dismissed
+            context = browser.new_context(accept_downloads=True)
+            page    = context.new_page()
 
-        # 4. Click download button
-        with page.expect_download() as dl_info:
-            page.get_by_text("Ausgewählte Daten herunterladen").click()
-        download = dl_info.value
+            # 1. Login
+            page.goto(login_url, wait_until="networkidle")
+            # Try common selectors for email/password — adjust if login fails
+            page.locator("input[type='email'], input[name='email'], input[name='username'], input[id*='email'], input[id*='user']").first.fill(username)
+            page.locator("input[type='password']").fill(password)
+            page.locator("button[type='submit'], button:has-text('Anmelden'), button:has-text('Login'), input[type='submit']").first.click()
+            page.wait_for_load_state("networkidle")
 
-        # 4. Save to temp file
-        suffix = ".xlsx"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp_path = tmp.name
-        download.save_as(tmp_path)
-        browser.close()
+            # 2. Navigate to energy manager profile for the requested month
+            page.goto(data_url, wait_until="networkidle")
+
+            # 3. Dismiss cookie consent popup if present (blocks click in headless)
+            try:
+                page.locator("#ppms_cm_agree-to-all").click(timeout=5000)
+                page.wait_for_selector("#ppms_cm_popup_overlay", state="hidden", timeout=10000)
+            except Exception as e:
+                print(f"   ⚠ Cookie consent handling: {e}")
+
+            # 4. Click download button
+            with page.expect_download() as dl_info:
+                page.get_by_text("Ausgewählte Daten herunterladen").click()
+            download = dl_info.value
+
+            # 5. Save to temp file
+            suffix = ".xlsx"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp_path = tmp.name
+            download.save_as(tmp_path)
+        finally:
+            browser.close()
 
     print(f"   Downloaded: {download.suggested_filename} → {tmp_path}")
 
-    rows = parse_consumption_xlsx(tmp_path)
-    os.unlink(tmp_path)
+    try:
+        rows = parse_consumption_xlsx(tmp_path)
+    finally:
+        os.unlink(tmp_path)
 
     if not rows:
         print(f"⚠ No rows parsed for {year}-{month:02d}")
