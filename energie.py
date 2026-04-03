@@ -83,8 +83,9 @@ def rebuild_daily_summary(conn):
             avg_spot_ct  = VALUES(avg_spot_ct)
     """)
     conn.commit()
+    affected = cur.rowcount
     cur.close()
-    print(f"✅ daily_summary rebuilt: {cur.rowcount} rows affected")
+    print(f"✅ daily_summary rebuilt: {affected} rows affected")
 
 
 # ── Billing ──────────────────────────────────────────────────────────────────
