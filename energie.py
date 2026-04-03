@@ -328,6 +328,15 @@ def fetch_consumption(cfg, year: int, month: int):
     print(f"✅ Scraped and stored {n} consumption rows for {year}-{month:02d}")
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _next_month(year: int, month: int) -> str:
+    """Return first day of the following month as 'YYYY-MM-DD'."""
+    if month == 12:
+        return f"{year + 1}-01-01"
+    return f"{year}-{month + 1:02d}-01"
+
+
 # ── CLI placeholder ──────────────────────────────────────────────────────────
 
 def main():
@@ -360,7 +369,27 @@ def main():
         fetch_consumption(cfg, args.year, args.month)
     elif args.cmd == "fetch-all":
         fetch_prices(cfg, args.year, args.month)
-        fetch_consumption(cfg, args.year, args.month)
+        conn = get_db(cfg)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) FROM readings WHERE ts >= %s AND ts < %s AND consumed_kwh > 0",
+                (f"{args.year}-{args.month:02d}-01", _next_month(args.year, args.month))
+            )
+            (count,) = cur.fetchone()
+            cur.close()
+        finally:
+            conn.close()
+        if count > 0:
+            print(f"ℹ Consumption data already present for {args.year}-{args.month:02d} ({count} rows), skipping scrape.")
+        else:
+            fetch_consumption(cfg, args.year, args.month)
+        # Rebuild daily summary after all data is in
+        conn2 = get_db(cfg)
+        try:
+            rebuild_daily_summary(conn2)
+        finally:
+            conn2.close()
     elif args.cmd == "import-csv":
         import_csv(cfg, args.file)
     elif args.cmd == "notify":
