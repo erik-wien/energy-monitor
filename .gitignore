@@ -3,3 +3,5 @@ energie.log
 __pycache__/
 .pytest_cache/
 tests/__pycache__/
+*.pyc
+.DS_Store
