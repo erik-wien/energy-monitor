@@ -237,9 +237,12 @@ def parse_consumption_xlsx(filepath: str) -> list[dict]:
 
 
 def import_csv(cfg, filepath: str):
-    print(f"⬇ Importing consumption CSV: {filepath}")
-    with open(filepath, newline="", encoding="utf-8-sig") as f:
-        rows = parse_consumption_csv(f)
+    print(f"⬇ Importing consumption file: {filepath}")
+    if filepath.lower().endswith(".xlsx"):
+        rows = parse_consumption_xlsx(filepath)
+    else:
+        with open(filepath, newline="", encoding="utf-8-sig") as f:
+            rows = parse_consumption_csv(f)
     if not rows:
         print("⚠ No rows parsed from CSV.")
         return
