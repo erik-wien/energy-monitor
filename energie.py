@@ -328,6 +328,165 @@ def fetch_consumption(cfg, year: int, month: int):
     print(f"✅ Scraped and stored {n} consumption rows for {year}-{month:02d}")
 
 
+# ── Slack Notifications ──────────────────────────────────────────────────────
+
+import matplotlib
+matplotlib.use("Agg")   # headless backend
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import tempfile
+
+
+class SlackNotifier:
+    def __init__(self, cfg):
+        import ssl, certifi
+        from slack_sdk import WebClient
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        self.client   = WebClient(token=cfg["slack"]["bot_token"], ssl=ssl_ctx)
+        self.channel  = cfg["slack"]["channel_id"]
+
+    def _get_daily_summary(self, conn, day: date) -> dict | None:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM daily_summary WHERE day = %s", (day,))
+        row = cur.fetchone()
+        cur.close()
+        return row
+
+    def _get_period_summary(self, conn, from_day: date, to_day: date) -> dict:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            """SELECT SUM(consumed_kwh) AS kwh, SUM(cost_brutto) AS eur,
+                      AVG(avg_spot_ct) AS ct
+               FROM daily_summary WHERE day BETWEEN %s AND %s""",
+            (from_day, to_day),
+        )
+        row = cur.fetchone()
+        cur.close()
+        return row or {"kwh": 0, "eur": 0, "ct": 0}
+
+    def _get_daily_rows(self, conn, from_day: date, to_day: date) -> list[dict]:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT day, consumed_kwh, cost_brutto FROM daily_summary "
+            "WHERE day BETWEEN %s AND %s ORDER BY day",
+            (from_day, to_day),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    def _make_chart(self, rows: list[dict], title: str) -> str:
+        """Generate combo chart PNG, return temp file path."""
+        days  = [r["day"] for r in rows]
+        cost  = [float(r["cost_brutto"]) for r in rows]
+        kwh   = [float(r["consumed_kwh"]) for r in rows]
+
+        fig, ax1 = plt.subplots(figsize=(10, 4))
+        fig.patch.set_facecolor("#1a1a2e")
+        ax1.set_facecolor("#16213e")
+
+        ax1.bar(days, cost, color="#e94560", alpha=0.8, label="Kosten (€)", width=0.6)
+        ax1.set_ylabel("Kosten (€)", color="#fc8181")
+        ax1.tick_params(axis="y", labelcolor="#fc8181")
+        ax1.tick_params(axis="x", colors="#718096")
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        ax1.set_xlabel("")
+        for spine in ax1.spines.values():
+            spine.set_edgecolor("#2d3748")
+
+        ax2 = ax1.twinx()
+        ax2.plot(days, kwh, color="#68d391", linewidth=2, marker="o",
+                 markersize=4, label="Verbrauch (kWh)")
+        ax2.set_ylabel("Verbrauch (kWh)", color="#68d391")
+        ax2.tick_params(axis="y", labelcolor="#68d391")
+        ax2.set_facecolor("#16213e")
+
+        # Combined legend
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2,
+                   facecolor="#1a1a2e", labelcolor="#e2e8f0", loc="upper left")
+
+        plt.title(title, color="#e2e8f0", pad=10)
+        fig.tight_layout()
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        plt.savefig(tmp.name, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
+        plt.close(fig)
+        return tmp.name
+
+    def post_daily(self, conn, day: date):
+        row = self._get_daily_summary(conn, day)
+        if not row:
+            print(f"⚠ No daily summary for {day}")
+            return
+        text = (
+            f"⚡ *Energie · {day.strftime('%a %d.%m.%Y')}*\n\n"
+            f"Verbrauch:  {float(row['consumed_kwh']):.1f} kWh\n"
+            f"Kosten:     € {float(row['cost_brutto']):.2f}\n"
+            f"Ø Tarif:    {float(row['avg_spot_ct']):.1f} ct/kWh\n\n"
+            f"→ http://localhost/energie/daily.php?date={day}"
+        )
+        self.client.chat_postMessage(channel=self.channel, text=text)
+        print(f"✅ Daily Slack briefing posted for {day}")
+
+    def post_weekly(self, conn, iso_year: int, iso_week: int):
+        mon = date.fromisocalendar(iso_year, iso_week, 1)
+        sun = date.fromisocalendar(iso_year, iso_week, 7)
+        summary = self._get_period_summary(conn, mon, sun)
+        rows    = self._get_daily_rows(conn, mon, sun)
+        if not rows:
+            print(f"⚠ No weekly data for {iso_year}-W{iso_week:02d}")
+            return
+
+        chart_path = self._make_chart(
+            rows, f"KW{iso_week:02d} · {mon.strftime('%d.%m')}–{sun.strftime('%d.%m.%y')}"
+        )
+        text = (
+            f"⚡ *Energie · KW{iso_week:02d} {iso_year}* "
+            f"({mon.strftime('%d.%m')}–{sun.strftime('%d.%m.%y')})\n\n"
+            f"Verbrauch:  {float(summary['kwh']):.1f} kWh\n"
+            f"Kosten:     € {float(summary['eur']):.2f}\n"
+            f"Ø Tarif:    {float(summary['ct']):.1f} ct/kWh\n\n"
+            f"→ http://localhost/energie/weekly.php?year={iso_year}&week={iso_week}"
+        )
+        self.client.files_upload_v2(
+            channel=self.channel, file=chart_path,
+            initial_comment=text, filename=f"energie-kw{iso_week:02d}.png"
+        )
+        os.unlink(chart_path)
+        print(f"✅ Weekly Slack briefing posted for {iso_year}-W{iso_week:02d}")
+
+    def post_monthly(self, conn, year: int, month: int):
+        from_day = date(year, month, 1)
+        # Last day of month
+        if month == 12:
+            to_day = date(year, 12, 31)
+        else:
+            to_day = date(year, month + 1, 1) - timedelta(days=1)
+        summary = self._get_period_summary(conn, from_day, to_day)
+        rows    = self._get_daily_rows(conn, from_day, to_day)
+        if not rows:
+            print(f"⚠ No monthly data for {year}-{month:02d}")
+            return
+
+        month_name = from_day.strftime("%B %Y")
+        chart_path = self._make_chart(rows, month_name)
+        text = (
+            f"⚡ *Energie · {month_name}*\n\n"
+            f"Verbrauch:  {float(summary['kwh']):.1f} kWh\n"
+            f"Kosten:     € {float(summary['eur']):.2f}\n"
+            f"Ø Tarif:    {float(summary['ct']):.1f} ct/kWh\n\n"
+            f"→ http://localhost/energie/monthly.php?year={year}&month={month}"
+        )
+        self.client.files_upload_v2(
+            channel=self.channel, file=chart_path,
+            initial_comment=text, filename=f"energie-{year}-{month:02d}.png"
+        )
+        os.unlink(chart_path)
+        print(f"✅ Monthly Slack briefing posted for {year}-{month:02d}")
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _next_month(year: int, month: int) -> str:
@@ -393,7 +552,32 @@ def main():
     elif args.cmd == "import-csv":
         import_csv(cfg, args.file)
     elif args.cmd == "notify":
-        pass  # implemented in Task 11
+        today = date.today()
+        conn  = get_db(cfg)
+        notifier = SlackNotifier(cfg)
+
+        # Daily: most recent available day
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(day) FROM daily_summary")
+        (latest,) = cur.fetchone()
+        cur.close()
+        if latest:
+            notifier.post_daily(conn, latest)
+
+        # Weekly: every Tuesday (weekday 1)
+        if today.weekday() == 1:
+            # Report on the just-completed week (Mon–Sun ending last Sunday)
+            last_sun = today - timedelta(days=today.weekday() + 1)
+            iso_year, iso_week, _ = last_sun.isocalendar()
+            notifier.post_weekly(conn, iso_year, iso_week)
+
+        # Monthly: every 2nd of the month
+        if today.day == 2:
+            prev_month = today.month - 1 or 12
+            prev_year  = today.year if today.month > 1 else today.year - 1
+            notifier.post_monthly(conn, prev_year, prev_month)
+
+        conn.close()
 
 
 if __name__ == "__main__":
