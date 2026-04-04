@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/inc/db.php';
 
 $year = (int)($_GET['year'] ?? date('Y'));
 $week = (int)($_GET['week'] ?? (int)date('W'));
@@ -33,4 +33,4 @@ $kpi_kwh      = (float)$summary['kwh'];
 $kpi_eur      = (float)$summary['eur'];
 $kpi_ct       = (float)$summary['ct'];
 
-require __DIR__ . '/_chart_page.php';
+require __DIR__ . '/inc/_chart_page.php';
