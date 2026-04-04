@@ -450,11 +450,13 @@ class SlackNotifier:
             f"Ø Tarif:    {float(summary['ct']):.1f} ct/kWh\n\n"
             f"→ http://localhost/energie/weekly.php?year={iso_year}&week={iso_week}"
         )
-        self.client.files_upload_v2(
-            channel=self.channel, file=chart_path,
-            initial_comment=text, filename=f"energie-kw{iso_week:02d}.png"
-        )
-        os.unlink(chart_path)
+        try:
+            self.client.files_upload_v2(
+                channel=self.channel, file=chart_path,
+                initial_comment=text, filename=f"energie-kw{iso_week:02d}.png"
+            )
+        finally:
+            os.unlink(chart_path)
         print(f"✅ Weekly Slack briefing posted for {iso_year}-W{iso_week:02d}")
 
     def post_monthly(self, conn, year: int, month: int):
@@ -479,11 +481,13 @@ class SlackNotifier:
             f"Ø Tarif:    {float(summary['ct']):.1f} ct/kWh\n\n"
             f"→ http://localhost/energie/monthly.php?year={year}&month={month}"
         )
-        self.client.files_upload_v2(
-            channel=self.channel, file=chart_path,
-            initial_comment=text, filename=f"energie-{year}-{month:02d}.png"
-        )
-        os.unlink(chart_path)
+        try:
+            self.client.files_upload_v2(
+                channel=self.channel, file=chart_path,
+                initial_comment=text, filename=f"energie-{year}-{month:02d}.png"
+            )
+        finally:
+            os.unlink(chart_path)
         print(f"✅ Monthly Slack briefing posted for {year}-{month:02d}")
 
 
@@ -555,29 +559,29 @@ def main():
         today = date.today()
         conn  = get_db(cfg)
         notifier = SlackNotifier(cfg)
+        try:
+            # Daily: most recent available day
+            cur = conn.cursor()
+            cur.execute("SELECT MAX(day) FROM daily_summary")
+            (latest,) = cur.fetchone()
+            cur.close()
+            if latest:
+                notifier.post_daily(conn, latest)
 
-        # Daily: most recent available day
-        cur = conn.cursor()
-        cur.execute("SELECT MAX(day) FROM daily_summary")
-        (latest,) = cur.fetchone()
-        cur.close()
-        if latest:
-            notifier.post_daily(conn, latest)
+            # Weekly: every Tuesday (weekday 1)
+            if today.weekday() == 1:
+                # Report on the just-completed week (Mon–Sun ending last Sunday)
+                last_sun = today - timedelta(days=today.weekday() + 1)
+                iso_year, iso_week, _ = last_sun.isocalendar()
+                notifier.post_weekly(conn, iso_year, iso_week)
 
-        # Weekly: every Tuesday (weekday 1)
-        if today.weekday() == 1:
-            # Report on the just-completed week (Mon–Sun ending last Sunday)
-            last_sun = today - timedelta(days=today.weekday() + 1)
-            iso_year, iso_week, _ = last_sun.isocalendar()
-            notifier.post_weekly(conn, iso_year, iso_week)
-
-        # Monthly: every 2nd of the month
-        if today.day == 2:
-            prev_month = today.month - 1 or 12
-            prev_year  = today.year if today.month > 1 else today.year - 1
-            notifier.post_monthly(conn, prev_year, prev_month)
-
-        conn.close()
+            # Monthly: every 2nd of the month
+            if today.day == 2:
+                prev_month = today.month - 1 or 12
+                prev_year  = today.year if today.month > 1 else today.year - 1
+                notifier.post_monthly(conn, prev_year, prev_month)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
