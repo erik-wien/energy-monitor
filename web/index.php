@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/inc/db.php';
+require_once __DIR__ . '/../inc/db.php';
 
 // Most recent day with data
 $stmt = $pdo->query("SELECT MAX(day) AS latest FROM daily_summary");
@@ -43,7 +43,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Energie</title>
-    <link rel="stylesheet" href="/energie/styles/style.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/style.css">
 </head>
 <body>
 <header>
@@ -53,7 +53,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 <main>
     <div class="tiles">
 
-        <a class="tile" href="/energie/daily.php?date=<?= htmlspecialchars($latest) ?>">
+        <a class="tile" href="<?= $base ?>/daily.php?date=<?= htmlspecialchars($latest) ?>">
             <div class="icon">📅</div>
             <div class="period">Letzter Tag</div>
             <h2><?= date('D, d.m.Y', strtotime($latest)) ?></h2>
@@ -64,7 +64,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
             </div>
         </a>
 
-        <a class="tile" href="/energie/weekly.php?year=<?= $iso_year ?>&week=<?= $iso_week ?>">
+        <a class="tile" href="<?= $base ?>/weekly.php?year=<?= $iso_year ?>&week=<?= $iso_week ?>">
             <div class="icon">📊</div>
             <div class="period">Letzte 7 Tage</div>
             <h2>KW<?= $iso_week ?> · <?= date('d.m', strtotime($week['from_day'])) ?>–<?= date('d.m.y', strtotime($week['to_day'])) ?></h2>
@@ -75,7 +75,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
             </div>
         </a>
 
-        <a class="tile" href="/energie/monthly.php?year=<?= $prev_year ?>&month=<?= $prev_month ?>">
+        <a class="tile" href="<?= $base ?>/monthly.php?year=<?= $prev_year ?>&month=<?= $prev_month ?>">
             <div class="icon">📈</div>
             <div class="period">Letzte 30 Tage</div>
             <h2><?= date('F Y', mktime(0,0,0,$prev_month,1,$prev_year)) ?></h2>
