@@ -6,7 +6,7 @@ $week = (int)($_GET['week'] ?? (int)date('W'));
 
 // Prev/next week
 $prev_week = $week - 1; $prev_year = $year;
-if ($prev_week < 1) { $prev_week = 52; $prev_year--; }
+if ($prev_week < 1) { $prev_year--; $prev_week = (int)(new DateTime("$prev_year-12-28"))->format('W'); }
 $next_week = $week + 1; $next_year = $year;
 $max_week  = (int)(new DateTime("$year-12-28"))->format('W');
 if ($next_week > $max_week) { $next_week = 1; $next_year++; }
