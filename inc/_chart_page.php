@@ -19,13 +19,13 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= htmlspecialchars($title) ?> · Energie</title>
-    <link rel="stylesheet" href="/energie/styles/style.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <header>
     <span>⚡</span>
-    <h1><a href="/energie/" style="color:inherit;text-decoration:none">Energie</a></h1>
+    <h1><a href="<?= $base ?>/" style="color:inherit;text-decoration:none">Energie</a></h1>
 </header>
 <main>
     <div class="nav-bar">
