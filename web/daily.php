@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/inc/db.php';
 
 $date = $_GET['date'] ?? date('Y-m-d', strtotime('-1 day'));
 $dt   = new DateTime($date);
@@ -26,4 +26,4 @@ $kpi_kwh      = (float)$summary['consumed_kwh'];
 $kpi_eur      = (float)$summary['cost_brutto'];
 $kpi_ct       = (float)$summary['avg_spot_ct'];
 
-require __DIR__ . '/_chart_page.php';
+require __DIR__ . '/inc/_chart_page.php';
