@@ -42,7 +42,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
            <?= $page_type === 'daily'   ? 'class="active"' : '' ?>>Heute</a>
         <a href="<?= $base ?>/weekly.php?year=<?= $_nav_week_year ?>&amp;week=<?= $_nav_week_num ?>"
            <?= $page_type === 'weekly'  ? 'class="active"' : '' ?>>Woche</a>
-        <a href="<?= $base ?>/monthly.php?year=<?= $_nav_month_year ?>&month=<?= $_nav_month_month ?>"
+        <a href="<?= $base ?>/monthly.php?year=<?= $_nav_month_year ?>&amp;month=<?= $_nav_month_month ?>"
            <?= $page_type === 'monthly' ? 'class="active"' : '' ?>>Monat</a>
     </nav>
 </header>
