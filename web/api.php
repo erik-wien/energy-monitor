@@ -1,5 +1,12 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+
+if (empty($_SESSION['loggedin'])) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
+
 header('Content-Type: application/json');
 
 $type = $_GET['type'] ?? '';
