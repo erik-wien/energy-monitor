@@ -61,32 +61,40 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
         <?php endif; ?>
     </div>
 
-    <div class="chart-container">
-        <canvas id="chart"></canvas>
+    <div class="tab-bar">
+        <button class="tab-btn" data-tab="grafik">Grafik</button>
+        <button class="tab-btn" data-tab="aufstellung">Aufstellung</button>
     </div>
 
-    <div class="kpi-strip">
-        <div class="kpi-card">
-            <div class="label">Verbrauch</div>
-            <div class="value kwh"><?= fmt_kwh($kpi_kwh) ?></div>
+    <div class="tab-panel" data-tab="grafik">
+        <div class="kpi-strip">
+            <div class="kpi-card">
+                <div class="label">Verbrauch</div>
+                <div class="value kwh"><?= fmt_kwh($kpi_kwh) ?></div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Kosten</div>
+                <div class="value eur"><?= fmt_eur($kpi_eur) ?></div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Ø Tarif</div>
+                <div class="value tariff"><?= fmt_ct($kpi_ct) ?></div>
+            </div>
         </div>
-        <div class="kpi-card">
-            <div class="label">Kosten</div>
-            <div class="value eur"><?= fmt_eur($kpi_eur) ?></div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">Ø Tarif</div>
-            <div class="value tariff"><?= fmt_ct($kpi_ct) ?></div>
+        <div class="chart-container">
+            <canvas id="chart"></canvas>
         </div>
     </div>
 
-    <div class="invoice">
-        <div class="invoice-hdr">Hochgerechnete Kosten · <?= htmlspecialchars($period_label) ?></div>
-        <table class="invoice-table">
-            <thead id="invoice-head"></thead>
-            <tbody id="invoice-body"></tbody>
-            <tfoot id="invoice-foot"></tfoot>
-        </table>
+    <div class="tab-panel" data-tab="aufstellung">
+        <div class="invoice">
+            <div class="invoice-hdr">Hochgerechnete Kosten · <?= htmlspecialchars($period_label) ?></div>
+            <table class="invoice-table">
+                <thead id="invoice-head"></thead>
+                <tbody id="invoice-body"></tbody>
+                <tfoot id="invoice-foot"></tfoot>
+            </table>
+        </div>
     </div>
 </main>
 
@@ -254,6 +262,28 @@ fetch(<?= json_encode($api_url) ?>)
       window.location = base + '/monthly.php?year=' + d.getFullYear() + '&month=' + (d.getMonth() + 1);
     }
   });
+})();
+
+// Tab switching
+(function() {
+  const storageKey = 'energie-tab-' + <?= json_encode($page_type) ?>;
+  const savedTab   = localStorage.getItem(storageKey) || 'grafik';
+
+  function activateTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+      panel.classList.toggle('hidden', panel.dataset.tab !== name);
+    });
+    localStorage.setItem(storageKey, name);
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+  });
+
+  activateTab(savedTab);
 })();
 </script>
 </body>
