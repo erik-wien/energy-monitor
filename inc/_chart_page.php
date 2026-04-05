@@ -145,6 +145,7 @@ fetch(<?= json_encode($api_url) ?>)
         ]
       },
       options: {
+        animation: false,
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
