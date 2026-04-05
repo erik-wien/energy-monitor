@@ -99,52 +99,49 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
 </main>
 
 <script>
-const isDailyPage = <?= json_encode($page_type === 'daily') ?>;
+const isDailyPage   = <?= json_encode($page_type === 'daily') ?>;
+const isWeeklyPage  = <?= json_encode($page_type === 'weekly') ?>;
 
 fetch(<?= json_encode($api_url) ?>)
   .then(r => r.json())
   .then(data => {
-    const ctx = document.getElementById('chart').getContext('2d');
+    const DE_DAYS = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+    const ctx     = document.getElementById('chart').getContext('2d');
+    const ptR     = data.labels.length > 50 ? 0 : 3;
+
+    const shadowDatasets = isDailyPage ? [] : [
+      {
+        type: 'line', label: '_tariff_max', data: data.max_spot,
+        borderColor: 'transparent', backgroundColor: 'rgba(99,179,237,0.13)',
+        pointRadius: 0, fill: '+1', tension: 0.3, yAxisID: 'y3', order: 5,
+      },
+      {
+        type: 'line', label: '_tariff_min', data: data.min_spot,
+        borderColor: 'transparent', backgroundColor: 'transparent',
+        pointRadius: 0, fill: false, tension: 0.3, yAxisID: 'y3', order: 4,
+      },
+    ];
+
     window._energieChart = new Chart(ctx, {
       data: {
         labels: data.labels,
         datasets: [
           {
-            type: 'line',
-            label: 'Kosten (€)',
-            data: data.cost,
-            borderColor: '#e94560',
-            backgroundColor: 'rgba(233,69,96,0.08)',
-            borderWidth: 2,
-            pointRadius: data.labels.length > 50 ? 0 : 3,
-            tension: 0.3,
-            yAxisID: 'y',
-            order: 2,
+            type: 'line', label: 'Kosten (€)', data: data.cost,
+            borderColor: '#e94560', backgroundColor: 'rgba(233,69,96,0.08)',
+            borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y', order: 2,
           },
           {
-            type: 'line',
-            label: 'Verbrauch (kWh)',
-            data: data.consumption,
-            borderColor: '#68d391',
-            backgroundColor: 'rgba(104,211,145,0.1)',
-            borderWidth: 2,
-            pointRadius: data.labels.length > 50 ? 0 : 3,
-            tension: 0.3,
-            yAxisID: 'y2',
-            order: 1,
+            type: 'line', label: 'Verbrauch (kWh)', data: data.consumption,
+            borderColor: '#68d391', backgroundColor: 'rgba(104,211,145,0.1)',
+            borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y2', order: 1,
           },
+          ...shadowDatasets,
           {
-            type: 'line',
-            label: 'Tarif (ct/kWh)',
-            data: data.tariff,
-            borderColor: '#63b3ed',
-            backgroundColor: 'rgba(99,179,237,0.1)',
-            borderWidth: 2,
-            pointRadius: data.labels.length > 50 ? 0 : 3,
-            tension: 0.3,
-            yAxisID: 'y3',
-            order: 0,
-          }
+            type: 'line', label: 'Tarif (ct/kWh)', data: data.tariff,
+            borderColor: '#63b3ed', backgroundColor: 'rgba(99,179,237,0.1)',
+            borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y3', order: 0,
+          },
         ]
       },
       options: {
@@ -152,16 +149,32 @@ fetch(<?= json_encode($api_url) ?>)
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: '#e2e8f0' } },
+          legend: {
+            labels: {
+              color: '#e2e8f0',
+              usePointStyle: true,
+              pointStyle: 'line',
+              filter: item => !item.text.startsWith('_'),
+            }
+          },
           tooltip: { backgroundColor: '#16213e', borderColor: '#2d3748', borderWidth: 1 }
         },
         scales: {
-          x:  { ticks: { color: '#718096', maxTicksLimit: 24,
-                  callback: (val, i, ticks) => {
-                    const lbl = ticks[i]?.label ?? '';
-                    return isDailyPage ? lbl.substring(0, 2) : lbl;
-                  }
-                }, grid: { color: '#2d3748' } },
+          x: {
+            ticks: {
+              color: '#718096',
+              maxTicksLimit: 24,
+              callback: (val, i) => {
+                if (isDailyPage)  return (data.labels[i] ?? '').substring(0, 2);
+                if (isWeeklyPage) {
+                  const raw = data.dates?.[i];
+                  return raw ? DE_DAYS[new Date(raw + 'T00:00:00').getDay()] : '';
+                }
+                return (data.labels[i] ?? '').substring(0, 2); // monthly: "DD"
+              }
+            },
+            grid: { color: '#2d3748' }
+          },
           y:  { ticks: { color: '#fc8181' }, grid: { color: '#2d3748' }, position: 'left',
                 title: { display: true, text: 'Kosten (€)', color: '#fc8181' },
                 min: isDailyPage ? -0.20 : undefined,
