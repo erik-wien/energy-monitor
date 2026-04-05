@@ -86,9 +86,7 @@ require_once __DIR__ . '/csrf.php';
 // ── Utility functions ────────────────────────────────────────────────────────
 
 function getUserIpAddr(): string {
-    return $_SERVER['HTTP_CLIENT_IP']
-        ?? $_SERVER['HTTP_X_FORWARDED_FOR']
-        ?? $_SERVER['REMOTE_ADDR'];
+    return $_SERVER['REMOTE_ADDR'];
 }
 
 function addAlert(string $type, string $message): void {
