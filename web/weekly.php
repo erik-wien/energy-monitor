@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+auth_require();
 
 $year = (int)($_GET['year'] ?? date('Y'));
 $week = (int)($_GET['week'] ?? (int)date('W'));
@@ -26,8 +27,12 @@ $stmt = $pdo->prepare(
 $stmt->execute([$year, $week]);
 $summary = $stmt->fetch() ?: ['kwh' => 0, 'eur' => 0, 'ct' => 0];
 
-$title        = "KW$week $year";
+$page_type        = 'weekly';
+$current_date_iso = $mon->format('Y-m-d');
+$title            = "KW$week $year";
 $period_label = "KW$week · {$mon->format('d.m')}–{$sun->format('d.m.y')}";
+$prev_label   = "KW$prev_week";
+$next_label   = "KW$next_week";
 $api_url      = "$base/api.php?type=weekly&year=$year&week=$week";
 $kpi_kwh      = (float)$summary['kwh'];
 $kpi_eur      = (float)$summary['eur'];

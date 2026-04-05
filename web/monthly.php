@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+auth_require();
 
 $year  = (int)($_GET['year']  ?? date('Y'));
 $month = (int)($_GET['month'] ?? ((int)date('m') - 1 ?: 12));
@@ -20,9 +21,14 @@ $stmt = $pdo->prepare(
 $stmt->execute([$year, $month]);
 $summary = $stmt->fetch() ?: ['kwh' => 0, 'eur' => 0, 'ct' => 0];
 
-$month_name   = date('F Y', mktime(0, 0, 0, $month, 1, $year));
+$de_months = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+$page_type        = 'monthly';
+$current_date_iso = sprintf('%04d-%02d-01', $year, $month);
+$month_name       = $de_months[$month - 1] . ' ' . $year;
 $title        = $month_name;
 $period_label = $month_name;
+$prev_label   = $de_months[$prev_month - 1] . ' ' . $prev_year;
+$next_label   = $de_months[$next_month - 1] . ' ' . $next_year;
 $api_url      = "$base/api.php?type=monthly&year=$year&month=$month";
 $kpi_kwh      = (float)$summary['kwh'];
 $kpi_eur      = (float)$summary['eur'];

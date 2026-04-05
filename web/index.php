@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+auth_require();
 
-// Most recent day with data
-$stmt = $pdo->query("SELECT MAX(day) AS latest FROM daily_summary");
+// Most recent day with actual consumption data
+$stmt = $pdo->query("SELECT MAX(day) AS latest FROM daily_summary WHERE consumed_kwh > 0");
 $latest = $stmt->fetch()['latest'] ?? date('Y-m-d', strtotime('-1 day'));
 
 // Yesterday tile
@@ -47,15 +48,20 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 </head>
 <body>
 <header>
-    <span>⚡</span>
-    <h1>Energie</h1>
+    <span style="display:flex;align-items:center;gap:0.75rem">
+        <span>⚡</span>
+        <h1>Energie</h1>
+    </span>
+    <nav class="header-nav">
+        <a href="<?= $base ?>/logout.php">Abmelden</a>
+    </nav>
 </header>
 <main>
     <div class="tiles">
 
         <a class="tile" href="<?= $base ?>/daily.php?date=<?= htmlspecialchars($latest) ?>">
             <div class="icon">📅</div>
-            <div class="period">Letzter Tag</div>
+            <div class="period"><?= $latest === date('Y-m-d') ? 'Heute' : 'Letzter Tag' ?></div>
             <h2><?= date('D, d.m.Y', strtotime($latest)) ?></h2>
             <div class="kpi">
                 <div class="kpi-row"><span class="kpi-label">Verbrauch</span><span class="kpi-value kwh"><?= fmt_kwh($today['consumed_kwh']) ?></span></div>
