@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/initialize.php';
 // Shared DB connection — include this file, do not access directly
 // $base: URL prefix for this app (e.g. '/energie' or '/energie.test')
 $base = '/' . explode('/', ltrim($_SERVER['SCRIPT_NAME'], '/'))[0];
