@@ -105,7 +105,7 @@ fetch(<?= json_encode($api_url) ?>)
   .then(r => r.json())
   .then(data => {
     const ctx = document.getElementById('chart').getContext('2d');
-    new Chart(ctx, {
+    window._energieChart = new Chart(ctx, {
       data: {
         labels: data.labels,
         datasets: [
@@ -277,6 +277,9 @@ fetch(<?= json_encode($api_url) ?>)
       panel.classList.toggle('hidden', panel.dataset.tab !== name);
     });
     localStorage.setItem(storageKey, name);
+    if (name === 'grafik' && window._energieChart) {
+      window._energieChart.resize();
+    }
   }
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
