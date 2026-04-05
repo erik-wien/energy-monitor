@@ -51,8 +51,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
         <a href="<?= htmlspecialchars($prev_url) ?>">← <?= htmlspecialchars($prev_label) ?></a>
         <div class="period-nav">
             <span class="period-label"><?= htmlspecialchars($period_label) ?></span>
-            <button class="cal-btn" id="cal-btn" title="Datum wählen">🗓</button>
-            <input type="date" id="date-picker" class="date-picker"
+            <input type="date" id="date-picker" class="date-input-inline"
                    value="<?= htmlspecialchars($current_date_iso) ?>">
         </div>
         <?php if ($next_url): ?>
@@ -237,16 +236,10 @@ fetch(<?= json_encode($api_url) ?>)
 (function() {
   const pageType = <?= json_encode($page_type) ?>;
   const base     = <?= json_encode($base) ?>;
-  const btn      = document.getElementById('cal-btn');
   const picker   = document.getElementById('date-picker');
 
-  btn.addEventListener('click', () => {
-    picker.classList.toggle('visible');
-    if (picker.classList.contains('visible')) picker.showPicker?.() || picker.focus();
-  });
-
   picker.addEventListener('change', () => {
-    const val = picker.value; // YYYY-MM-DD
+    const val = picker.value;
     if (!val) return;
     const d = new Date(val + 'T00:00:00');
     if (pageType === 'daily') {
@@ -260,10 +253,6 @@ fetch(<?= json_encode($api_url) ?>)
     } else {
       window.location = base + '/monthly.php?year=' + d.getFullYear() + '&month=' + (d.getMonth() + 1);
     }
-  });
-
-  document.addEventListener('click', e => {
-    if (!e.target.closest('.period-nav')) picker.classList.remove('visible');
   });
 })();
 </script>
