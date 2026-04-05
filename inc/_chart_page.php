@@ -44,6 +44,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
            <?= $page_type === 'weekly'  ? 'class="active"' : '' ?>>Woche</a>
         <a href="<?= $base ?>/monthly.php?year=<?= $_nav_month_year ?>&amp;month=<?= $_nav_month_month ?>"
            <?= $page_type === 'monthly' ? 'class="active"' : '' ?>>Monat</a>
+        <a href="<?= $base ?>/logout.php" style="margin-left:0.75rem;color:var(--muted)">Abmelden</a>
     </nav>
 </header>
 <main>
@@ -192,7 +193,6 @@ fetch(<?= json_encode($api_url) ?>)
     });
 
     // Invoice table
-    const DE_DAYS = ['So','Mo','Di','Mi','Do','Fr','Sa'];
     const fmtKwh = v => v.toFixed(2).replace('.', ',') + ' kWh';
     const fmtEur = v => (v < 0 ? '\u2212\u20ac\u00a0' : '\u20ac\u00a0') + Math.abs(v).toFixed(3).replace('.', ',');
     const fmtCt  = v => v.toFixed(2).replace('.', ',') + ' ct';
