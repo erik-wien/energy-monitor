@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/../inc/initialize.php';
-require_once __DIR__ . '/../inc/auth.php';
 
 if (empty($_POST['login-username']) || empty($_POST['login-password'])) {
     addAlert('danger', 'Bitte sowohl Benutzername als auch Kennwort ausfüllen.');
