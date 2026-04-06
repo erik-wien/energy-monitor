@@ -80,10 +80,10 @@ PHP app served at `/energie/`. All pages are login-gated.
 
 ### Auth system
 
-Ported from the sibling project `wlmonitor`. Authenticates against the shared `wl_accounts` MariaDB table (same DB as the pipeline data).
+Authenticates against the shared `auth_accounts` MariaDB table. Auth code is provided by the `erikr/auth` library (Composer).
 
 **Two DB connections per request:**
-- `$con` — MySQLi, opened in `inc/initialize.php`, used for auth (`wl_accounts`, `wl_log`)
+- `$con` — MySQLi, opened in `inc/initialize.php`, used for auth (`auth_accounts`, `auth_log`)
 - `$pdo` — PDO, opened in `inc/db.php`, used for all data queries (`readings`, `daily_summary`, `tariff_config`)
 
 **Bootstrap chain:** every page `require_once '../inc/db.php'` → which `require_once 'initialize.php'` → session + MySQLi + security headers + CSRF.
@@ -92,15 +92,15 @@ Ported from the sibling project `wlmonitor`. Authenticates against the shared `w
 
 | File | Role |
 |------|------|
-| `inc/initialize.php` | Security headers (CSP nonce, HSTS, etc.), MySQLi `$con`, session start, CSRF include, `getUserIpAddr()`, `addAlert()`, `appendLog()`, `auth_require()` |
-| `inc/csrf.php` | `csrf_token()`, `csrf_verify()`, `csrf_input()` |
-| `inc/auth.php` | `auth_login()`, `auth_logout()`, IP rate limiting (5 attempts / 15 min, state in `data/ratelimit.json`) |
+| `inc/initialize.php` | Security headers (CSP nonce, HSTS, etc.), MySQLi `$con`, session start, auth library bootstrap, `getUserIpAddr()`, `addAlert()`, `appendLog()`, `auth_require()` |
 | `inc/db.php` | Includes `initialize.php`, opens PDO `$pdo`, sets `$base` URL prefix |
 | `web/login.php` | Login form (Energie dark CSS, no Bootstrap) |
-| `web/authentication.php` | POST handler: CSRF check → `auth_login()` → redirect |
-| `web/logout.php` | `auth_logout()` → redirect to `login.php` |
+| `web/authentication.php` | POST handler: CSRF check → auth library → redirect |
+| `web/logout.php` | Auth library logout → redirect to `login.php` |
 | `data/ratelimit.json` | Rate-limit state file (writable by web server) |
 | `data/.htaccess` | Blocks direct HTTP access to `data/` |
+
+**Auth configuration:** `AUTH_DB_PREFIX = ''` (Energie connects directly to the auth database). Shared auth code lives in `/Users/erikr/Git/auth`.
 
 **Protecting a page:** add `auth_require();` after `require_once db.php`. For JSON endpoints return 401 inline instead of redirecting.
 
