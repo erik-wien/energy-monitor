@@ -3,7 +3,7 @@
  * inc/initialize.php
  *
  * Bootstrap: config, MySQLi $con (auth DB), auth library.
- * Included at the top of inc/db.php — do not include directly from pages.
+ * Included by inc/db.php for pages that need PDO. Auth-only pages (authentication.php, logout.php, avatar.php) may include this file directly to avoid opening an unnecessary PDO connection.
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
