@@ -21,19 +21,30 @@ Fetches hourly spot prices from the Hofer Grünstrom API for all months of a giv
 **Step 3 — `3_merge2abrechnung.py`**  
 Joins consumption (`verbrauch_YYYY.json`) with spot prices (`spotpreise_YYYY_MM.json` files) by ISO timestamp, applies pricing formula, outputs `abrechnung_YYYY.csv`.
 
-## Pricing Formula (Step 3)
+## Pricing Formula (`calculate_cost_brutto`)
 
-Fixed constants in `AbrechnungExporter`:
-- `NETZ_PREIS = 10.396` ct/kWh
-- `HOFER_AUFSCHLAG = 1.9` ct/kWh (fixed markup, not multiplied by MwSt)
-- `MWST = 0.20` (20%)
-- `VIERTELSTUNDENZUSCHLAG = 0.0311875` € per quarter-hour slot
+Tariff parameters come from the `tariff_config` DB table (looked up by `valid_from <= ts`):
+
+| Column | Meaning | Unit |
+|--------|---------|------|
+| `provider_surcharge_ct` | Hofer Aufschlag | ct/kWh |
+| `electricity_tax_ct` | Elektrizitätsabgabe | ct/kWh |
+| `renewable_tax_ct` | Erneuerbaren Förderbeitrag | ct/kWh |
+| `meter_fee_eur` | Zählergebühr | €/yr |
+| `renewable_fee_eur` | Erneuerbaren Förderpauschale | €/yr |
+| `consumption_tax_rate` | Gebrauchsabgabe Wien | fraction (e.g. 0.06) |
+| `vat_rate` | Umsatzsteuer | fraction (e.g. 0.20) |
+| `yearly_kwh_estimate` | Annual kWh for fee amortisation | kWh |
 
 ```
-kosten_brutto = (consumed * ((preis_ct + NETZ_PREIS) * (1 + MWST) + HOFER_AUFSCHLAG) + VIERTELSTUNDENZUSCHLAG) / 100
+annual_ct  = (meter_fee_eur + renewable_fee_eur) / yearly_kwh_estimate * 100
+net_ct     = epex + provider_surcharge_ct + electricity_tax_ct + renewable_tax_ct + annual_ct
+gross_ct   = net_ct * (1 + vat_rate) + net_ct * consumption_tax_rate
+           = net_ct * (1 + vat_rate + consumption_tax_rate)
+cost_eur   = consumed_kwh * gross_ct / 100
 ```
 
-The `/ 100` converts from ct to €. Timestamps are matched exactly — missing timestamps are collected in `missing_timestamps`.
+**Key rule:** VAT does **not** apply to the consumption tax (Gebrauchsabgabe). They are additive, not compounding.
 
 ## Running the Scripts
 
@@ -62,3 +73,39 @@ Only external dependency: `requests` (used in script 2). All other imports are s
 | `spotpreise_YYYY_MM.json` | Raw monthly spot price API responses |
 | `spotpreise_YYYY.csv` | Aggregated annual spot prices |
 | `abrechnung_YYYY.csv` | Final billing output |
+
+## Web UI (`web/`)
+
+PHP app served at `/energie/`. All pages are login-gated.
+
+### Auth system
+
+Ported from the sibling project `wlmonitor`. Authenticates against the shared `wl_accounts` MariaDB table (same DB as the pipeline data).
+
+**Two DB connections per request:**
+- `$con` — MySQLi, opened in `inc/initialize.php`, used for auth (`wl_accounts`, `wl_log`)
+- `$pdo` — PDO, opened in `inc/db.php`, used for all data queries (`readings`, `daily_summary`, `tariff_config`)
+
+**Bootstrap chain:** every page `require_once '../inc/db.php'` → which `require_once 'initialize.php'` → session + MySQLi + security headers + CSRF.
+
+**Key files:**
+
+| File | Role |
+|------|------|
+| `inc/initialize.php` | Security headers (CSP nonce, HSTS, etc.), MySQLi `$con`, session start, CSRF include, `getUserIpAddr()`, `addAlert()`, `appendLog()`, `auth_require()` |
+| `inc/csrf.php` | `csrf_token()`, `csrf_verify()`, `csrf_input()` |
+| `inc/auth.php` | `auth_login()`, `auth_logout()`, IP rate limiting (5 attempts / 15 min, state in `data/ratelimit.json`) |
+| `inc/db.php` | Includes `initialize.php`, opens PDO `$pdo`, sets `$base` URL prefix |
+| `web/login.php` | Login form (Energie dark CSS, no Bootstrap) |
+| `web/authentication.php` | POST handler: CSRF check → `auth_login()` → redirect |
+| `web/logout.php` | `auth_logout()` → redirect to `login.php` |
+| `data/ratelimit.json` | Rate-limit state file (writable by web server) |
+| `data/.htaccess` | Blocks direct HTTP access to `data/` |
+
+**Protecting a page:** add `auth_require();` after `require_once db.php`. For JSON endpoints return 401 inline instead of redirecting.
+
+**Rate limiter** uses only `REMOTE_ADDR` (no proxy headers) to prevent bypass via spoofed `X-Forwarded-For`.
+
+**Session fields set on login:** `loggedin`, `sId`, `id`, `username`, `email`, `rights`.
+
+**Config:** `/opt/homebrew/etc/energie-config.ini` — both `initialize.php` (MySQLi) and `db.php` (PDO) read the `[db]` section.
