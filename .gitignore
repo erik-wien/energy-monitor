@@ -1,4 +1,7 @@
 config.ini
+energie-config*.ini
+vendor/
+composer.phar
 energie.log
 __pycache__/
 .pytest_cache/

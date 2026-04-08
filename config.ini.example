@@ -1,14 +1,9 @@
-[hofer]
-username = you@example.com
-password = secret
-meter_id = AT0010000000000000001000012891962
-
 [db]
-host = localhost
-user = energie
-password = secret
+host     = localhost
+user     = energie
+password = your-password
 database = energie
 
 [slack]
-bot_token = xoxb-your-token-here
+bot_token  = xoxb-your-token
 channel_id = C0123456789
