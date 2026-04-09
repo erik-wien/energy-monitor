@@ -1,0 +1,42 @@
+/* energie-theme.css — Energie color palette.
+   Overrides shared/theme.css variables. Dark-first (default).
+   Adds project-specific: --color-accent, --color-green, --color-blue.
+*/
+
+:root, [data-theme="dark"] {
+    --color-bg:      #0f0f1a;
+    --color-surface: #1a1a2e;
+    --color-card:    #16213e;
+    --color-text:    #e2e8f0;
+    --color-muted:   #718096;
+    --color-border:  #2d3748;
+    --color-accent:  #e94560;
+    --color-green:   #68d391;
+    --color-blue:    #63b3ed;
+}
+
+[data-theme="light"] {
+    --color-bg:      #f0f2f7;
+    --color-surface: #ffffff;
+    --color-card:    #ffffff;
+    --color-text:    #1a202c;
+    --color-muted:   #718096;
+    --color-border:  #cbd5e0;
+    --color-accent:  #e94560;
+    --color-green:   #276749;
+    --color-blue:    #2b6cb0;
+}
+
+@media (prefers-color-scheme: light) {
+    [data-theme="auto"] {
+        --color-bg:      #f0f2f7;
+        --color-surface: #ffffff;
+        --color-card:    #ffffff;
+        --color-text:    #1a202c;
+        --color-muted:   #718096;
+        --color-border:  #cbd5e0;
+        --color-accent:  #e94560;
+        --color-green:   #276749;
+        --color-blue:    #2b6cb0;
+    }
+}

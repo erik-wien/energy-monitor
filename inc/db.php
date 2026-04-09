@@ -3,7 +3,9 @@ require_once __DIR__ . '/initialize.php';
 // Shared DB connection — include this file, do not access directly
 // $base: URL prefix for this app (e.g. '/energie' or '/energie.test')
 $base = '/' . explode('/', ltrim($_SERVER['SCRIPT_NAME'], '/'))[0];
-$config_path = '/opt/homebrew/etc/energie-config.ini';
+$config_path = $base === '/energie.test'
+    ? '/opt/homebrew/etc/energie-config-dev.ini'
+    : '/opt/homebrew/etc/energie-config.ini';
 $cfg = parse_ini_file($config_path, true);
 if (!$cfg) {
     http_response_code(500);

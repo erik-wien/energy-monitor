@@ -40,7 +40,7 @@ Template variables the page must provide:
 | `$api_url` | string | Full URL passed to Chart.js `fetch()` |
 | `$kpi_kwh` / `$kpi_eur` / `$kpi_ct` | float | KPI strip values |
 
-`yearly.php` is standalone — it has enough unique requirements (invoice table with months, 13-month rolling window, no `shadowDatasets`) that a shared template would add more complexity than it removes.
+`yearly.php` is standalone — it has enough unique requirements (monthly rows instead of slots/days, 13-month rolling window, no `shadowDatasets`) that a shared template would add more complexity than it removes.
 
 ---
 
@@ -64,11 +64,11 @@ Each drilldown chart has up to 10 datasets. The `_` prefix marks shadow/band dat
 | `_hkwh_min` | y2 | transparent | shadow pair |
 | `Ø Verbrauch (kWh)` | y2 | `#38a169` dark green | dashed, historical avg |
 
-**Color convention:** contemporary data uses light shades; historical overlay uses the darker shade of the same hue. This lets you compare actual vs. typical at a glance without needing a legend.
+**Color convention:** contemporary data uses light shades; historical overlay uses the darker shade of the same hue.
 
-**Shadow bands:** implemented via Chart.js `fill: '+1'` on the `_max` dataset, which fills the area between `_max` and the next dataset (`_min`). The `_max` and `_min` datasets must be adjacent in the `datasets` array; the band dataset always immediately precedes its pair.
+**Shadow bands:** implemented via Chart.js `fill: '+1'` on the `_max` dataset. The `_max` and `_min` datasets must be adjacent in the `datasets` array.
 
-**Daily page difference:** the daily view has no tariff min/max shadow band (spot prices are hourly, so all four quarter-hour slots in the same hour have identical `spot_ct`; min = max). The "Tarif Band" pill button is hidden on this page via an `isDailyPage` JS check.
+**Daily page difference:** no tariff min/max shadow band (all quarter-hour slots within the same hour have identical `spot_ct`). The "Tarif Band" pill is hidden on the daily page.
 
 ### Three Y-axes
 
@@ -78,11 +78,9 @@ Each drilldown chart has up to 10 datasets. The `_` prefix marks shadow/band dat
 | `y2` | right | green `#68d391` | Verbrauch (kWh) |
 | `y3` | right | blue `#63b3ed` | Tarif (ct/kWh) |
 
-The right-side axes overlap visually. This works because cost and consumption are rarely toggled simultaneously, and the pill controls make it explicit which axis is active.
-
 ### Scale Stability
 
-Chart.js recomputes scale boundaries whenever datasets are hidden or shown, which causes jarring axis jumps. To prevent this, scale boundaries are snapshotted immediately after chart creation and restored in every `applyVis()` call:
+Chart.js recomputes scale boundaries whenever datasets are hidden or shown. To prevent jarring axis jumps, scale boundaries are snapshotted immediately after chart creation and restored in every `applyVis()` call:
 
 ```js
 const _ch = window._energieChart;
@@ -93,11 +91,9 @@ _ch._y3Min = _ch.scales.y3?.min;  _ch._y3Max = _ch.scales.y3?.max;
 
 ### Visibility Pills
 
-Eight pill buttons (seven on the yearly page, six on the daily page) toggle dataset visibility. Each button has a `data-key` attribute that maps to an entry in the `vis` object.
+Eight pill buttons toggle dataset visibility. Each button has a `data-key` attribute mapping to an entry in the `vis` object. State is persisted to `localStorage` under `energie-vis-{page_type}`.
 
-State is persisted to `localStorage` under the key `energie-vis-{page_type}`. On page load, the stored state is merged over the defaults, so a user who hides "Kosten" on the daily page will find it hidden next time.
-
-Pill appearance: **raised** (`.active`) = dataset visible; **pressed** (inset shadow, dim) = dataset hidden. This 3D button metaphor makes the state immediately obvious without labels like "show/hide".
+Pill appearance: **raised** (`.active`) = dataset visible; **pressed** (inset shadow, dim) = dataset hidden.
 
 ### Legend Click Suppression
 
@@ -105,7 +101,71 @@ Pill appearance: **raised** (`.active`) = dataset visible; **pressed** (inset sh
 legend: { onClick: () => {} }
 ```
 
-Click-to-hide on legend items is disabled. Visibility is controlled exclusively through pills. This prevents accidental hiding via the legend, which would bypass localStorage persistence and confuse the pill state.
+Click-to-hide on legend items is disabled. Visibility is controlled exclusively through pills to keep localStorage persistence consistent.
+
+---
+
+## Print Invoice
+
+A printer icon button sits in the `.period-nav` bar (between the period label and the date picker). Clicking it opens a self-contained cost breakdown in a new popup window.
+
+### How it works
+
+After the API fetch resolves, `buildPrintContent(data, DE_DAYS)` generates a complete HTML document as a string and stores it in `_printHTML`. When the print button is clicked:
+
+```js
+_blobUrl = URL.createObjectURL(new Blob([_printHTML], { type: 'text/html; charset=utf-8' }));
+const win = window.open(_blobUrl, '_blank', 'width=900,height=700,…');
+if (win) win.addEventListener('load', () => { win.focus(); win.print(); });
+```
+
+The popup is created as a Blob URL rather than using the legacy `write` method on `document`. This avoids XSS risk and is compatible with the app's nonce-based CSP. Chrome inherits the parent page's CSP for `blob:` URLs opened from the same origin — inline event handlers in the popup HTML would be blocked. The `window.print()` call is therefore made from the opener's nonce-protected `<script>` via the `load` event, not from an `onclick` attribute inside the blob.
+
+Blob URLs are revoked on every subsequent click (`URL.revokeObjectURL(_blobUrl)`) to avoid memory leaks.
+
+### Invoice columns
+
+| Column | Content | Format |
+|---|---|---|
+| Zeit / Tag | Time slot (daily) or weekday + date (weekly/monthly) | string |
+| Verbrauch | Consumption | `kWh` to 4 dp (daily) / 3 dp (weekly/monthly) |
+| EPEX | Spot price rate | `ct/kWh` to 2 dp |
+| Aufschlag | Provider surcharge component | `€` |
+| Abgaben | Tax component (electricity + renewable) | `€` |
+| Steuern | Consumption tax (Gebrauchsabgabe Wien) component | `€` |
+| MwSt | VAT component | `€` |
+| Gesamt | Total variable cost for this slot | `€` |
+
+The "€" columns use `invoice_breakdown()` decomposition — each column is the portion of the total cost attributable to that cost driver, computed so they sum exactly to Gesamt.
+
+### Zwischensumme (subtotal row)
+
+- **Verbrauch**: simple sum of slot consumption
+- **EPEX**: consumption-weighted average rate — `Σ(kWh_i × spot_i) / Σ(kWh_i)` in ct/kWh
+- **Aufschlag / Abgaben / Steuern / MwSt / Gesamt**: simple sums
+
+The weighted EPEX average means that multiplying it by the total kWh gives the total EPEX cost in ct (÷ 100 = €).
+
+### Invoice footer
+
+Two fixed-cost rows appear below the subtotal if non-zero:
+
+- **Zählergebühr (ant.)** — meter fee proportional to the period's consumption share of `yearly_kwh_estimate`
+- **Erneuerbaren-Abgabe (ant.)** — renewable flat fee, same proration
+
+These are supplied by `api.php` as `meter_fee_prop` and `renewable_fee_prop`.
+
+**Gesamtsumme** = variable subtotal + both fixed-cost proportions.
+
+### Invoice header
+
+Hardcoded address and provider info (Böckhgasse 9/6/74, 1120 Wien; Hofer Grünstrom; Wien Strom), plus a "Stand vom DD.MM.YYYY HH:MM" timestamp computed at print time.
+
+### Decimal precision
+
+- `invDp = 4` on the daily page (slot-level data is small; 4 dp avoids displaying `€ 0,00` for sub-cent slots)
+- `invDp = 3` on weekly/monthly pages (daily totals are large enough that 3 dp is sufficient)
+- The EPEX and kWh columns always use 2 dp and `invDp` dp respectively regardless of page type
 
 ---
 
@@ -124,7 +184,36 @@ SELECT MAX(consumed_kwh) FROM readings        -- max_slot_kwh
 SELECT MAX(cost_brutto)  FROM readings        -- max_slot_cost
 ```
 
-These are used to pin the y-axis `max` values so that navigating between periods doesn't change the scale — a spike in one month doesn't make other months look flat.
+These pin the y-axis `max` values so that navigating between periods doesn't change the scale.
+
+### `invoice_breakdown()` helper
+
+```php
+function invoice_breakdown(float $kwh, float $epex, array &$epex_out,
+    float $prov, float $elec_tax, float $ren_tax,
+    float $con_tax_rate, float $vat_rate,
+    float $mfp, float $rfp): array
+```
+
+Splits the total variable cost into the six invoice columns (EPEX, Aufschlag, Abgaben, Steuern, MwSt, Gesamt) and appends `$epex` (the raw ct/kWh spot rate) to `$epex_out`. The caller accumulates `$epex_out[]` across all rows.
+
+The decomposition uses the same pricing formula as `calculate_cost_brutto()` but computes each additive component separately so the columns sum to the total. The fixed-cost proportions `$mfp` / `$rfp` are passed through to the response but handled separately (they appear only in the invoice footer, not as per-slot columns).
+
+### Common response fields
+
+All data-fetching endpoints (`daily`, `weekly`, `monthly`, `yearly`) return these invoice-related arrays alongside the chart data:
+
+| Field | Content |
+|---|---|
+| `epex` | Spot rate per slot/day/month in ct/kWh |
+| `aufschlag` | Provider surcharge component in € |
+| `abgaben` | Electricity + renewable tax component in € |
+| `gebrauchsabgabe` | Consumption tax component in € |
+| `mwst_tax` | VAT component in € |
+| `gesamt_variable` | Total variable cost per slot/day/month in € |
+| `meter_fee_prop` | Meter fee proportion for the period in € |
+| `renewable_fee_prop` | Renewable flat fee proportion for the period in € |
+| `period_start` / `period_end` | ISO date strings for the invoice header |
 
 ### `type=daily`
 
@@ -132,27 +221,9 @@ These are used to pin the y-axis `max` values so that navigating between periods
 GET api.php?type=daily&date=YYYY-MM-DD
 ```
 
-Returns 96 data points (15-min slots). Historical aggregates are computed by `GROUP BY TIME(ts)` across all dates — i.e., "what is the average consumption at 14:15 across all recorded days?"
+Returns 96 data points (15-min slots). Historical aggregates are computed by `GROUP BY TIME(ts)` across all dates.
 
-`hist_kwh_avg` uses `AVG(NULLIF(consumed_kwh, 0))` to exclude hours where only spot prices were recorded (before consumption data was available), preventing the historical average from being dragged down by stub rows.
-
-**Response:**
-```json
-{
-  "labels": ["00:00:00", "00:15:00", …],
-  "cost": [0.021, …],
-  "consumption": [0.058, …],
-  "tariff": [4.32, …],
-  "hist_tariff_avg": [3.98, …],
-  "hist_tariff_min": [1.20, …],
-  "hist_tariff_max": [8.74, …],
-  "hist_kwh_avg": [0.042, …],
-  "hist_kwh_min": [0.011, …],
-  "hist_kwh_max": [0.128, …],
-  "maxCost": 0.842,
-  "maxKwh": 1.234
-}
-```
+`hist_kwh_avg` uses `AVG(NULLIF(consumed_kwh, 0))` to exclude hours where only spot prices were recorded.
 
 ### `type=weekly`
 
@@ -160,9 +231,7 @@ Returns 96 data points (15-min slots). Historical aggregates are computed by `GR
 GET api.php?type=weekly&year=YYYY&week=W
 ```
 
-Returns up to 7 data points (one per day). ISO week numbering (`WEEK(day, 3)`). Also returns `dates` (raw `YYYY-MM-DD` values) used by Chart.js to render German day abbreviations on the x-axis.
-
-Historical aggregates are grouped by `WEEKDAY(day)` (0=Mon…6=Sun).
+Returns up to 7 data points (one per day). ISO week numbering (`WEEK(day, 3)`). Also returns `dates` (raw `YYYY-MM-DD` values) used by Chart.js to render German day abbreviations. Historical aggregates grouped by `WEEKDAY(day)`.
 
 ### `type=monthly`
 
@@ -170,9 +239,7 @@ Historical aggregates are grouped by `WEEKDAY(day)` (0=Mon…6=Sun).
 GET api.php?type=monthly&year=YYYY&month=M
 ```
 
-Returns up to 31 data points. Historical aggregates grouped by `DAY(day)` (day of month, 1–31).
-
-Also includes `min_spot` / `max_spot` per day (from `readings`) for the tariff shadow band.
+Returns up to 31 data points. Historical aggregates grouped by `DAY(day)`. Includes `min_spot` / `max_spot` per day for the tariff shadow band.
 
 ### `type=yearly`
 
@@ -180,9 +247,7 @@ Also includes `min_spot` / `max_spot` per day (from `readings`) for the tariff s
 GET api.php?type=yearly&year=YYYY&month=M
 ```
 
-Returns 13 data points — the 13 months ending at `year-month` (inclusive). The 13-month window ensures a full calendar year is always visible plus the current month, regardless of where you are in the year.
-
-Historical aggregates: per calendar month, averaged across all years in the dataset, using a subquery that first sums consumption per month per year before averaging across years.
+Returns 13 data points — the 13 months ending at `year-month` inclusive. Historical aggregates: per calendar month, averaged across all years, using a subquery that first sums per month per year before averaging.
 
 ### `type=set-theme`
 
@@ -191,7 +256,34 @@ POST api.php?type=set-theme
 Body: theme=light|dark|auto
 ```
 
-Persists the theme choice to `auth_accounts.theme` via MySQLi `$con`. Also updates `$_SESSION['theme']`. Returns `{"ok": true}`.
+Persists to `auth_accounts.theme` and `$_SESSION['theme']`. Returns `{"ok": true}`.
+
+### `type=trigger-import`
+
+```
+POST api.php?type=trigger-import
+```
+
+Runs the Python import pipeline on all `.csv` and `.xlsx` files currently in `scrapes/`. The subprocess is spawned via `proc_open()` with an array argument list (no shell string, no injection risk). Captures stdout/stderr and returns:
+
+```json
+{ "ok": true,  "log": "Imported 384 rows…" }
+{ "ok": false, "error": "…", "log": "…" }
+```
+
+The import button in the header dropdown calls this endpoint, disables itself while waiting, and reloads the page on success.
+
+---
+
+## Header — `inc/_header.php`
+
+### Import notification
+
+At render time, `_header.php` globs `scrapes/` for `*.csv` and `*.xlsx` files. If any are found, a small orange dot (`.notif-dot`) appears on the avatar button. The count is shown in the "Importieren (N)" dropdown item.
+
+### Theme switcher
+
+Three buttons in the dropdown (☀ light / ⬤ auto / 🌙 dark) post to `api.php?type=set-theme` via fetch and immediately update `document.documentElement.dataset.theme`. The active button gets `.active`. Theme can also be changed via the Preferences page form — both paths write to the same DB column and session key.
 
 ---
 
@@ -199,11 +291,12 @@ Persists the theme choice to `auth_accounts.theme` via MySQLi `$con`. Also updat
 
 Standalone page (not using `_chart_page.php`). Differences from the drilldown pages:
 
-- Labels are `MM/YY` formatted month keys
-- Invoice table shows monthly totals with Ø Tarif column (not slot-level detail)
+- Labels are `MM/YY` formatted month keys; rows iterate `data.months` instead of `data.dates`
+- Invoice table shows monthly totals with weighted-average EPEX column
 - No date picker (navigation is prev/next month-end)
 - No "Tarif Band" pill (no min/max shadow for yearly aggregate data)
-- Legend uses `pointStyle: 'rectRounded'` instead of `'line'`
+- `buildPrintContent` uses `DE_MO` (German month abbreviation array) instead of `DE_DAYS`
+- Print popup, Blob URL approach, and `load`-event auto-print are identical to `_chart_page.php`
 
 ---
 
@@ -217,5 +310,3 @@ Four settings sections, all using POST forms with CSRF protection:
 | Theme | `change_theme` | Writes to DB + session; also settable via header dropdown |
 | Email | `change_email` | Requires password confirmation; sends confirmation link via SMTP |
 | Password | `change_password` | Old password required; bcrypt cost 13; min 8 chars |
-
-Theme can be changed two ways: via the header dropdown (instant, AJAX to `api.php?type=set-theme`) or via Preferences (form POST). Both paths write to the same DB column and session key.

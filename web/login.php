@@ -14,74 +14,22 @@ unset($_SESSION['alerts']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Energie · Anmelden</title>
-    <link rel="stylesheet" href="/energie/styles/style.css">
-    <style>
-        .login-wrap {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: calc(100vh - 60px);
-            padding: 2rem;
-        }
-        .login-card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 2rem;
-            width: 100%;
-            max-width: 360px;
-        }
-        .login-card h2 {
-            margin-bottom: 1.5rem;
-            text-align: center;
-            font-size: 1.1rem;
-        }
-        .form-group { margin-bottom: 1rem; }
-        .form-group label {
-            display: block;
-            font-size: 0.85rem;
-            color: var(--muted);
-            margin-bottom: 0.35rem;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 0.6rem 0.75rem;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            color: var(--text);
-            font-size: 0.95rem;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-        .btn-login {
-            width: 100%;
-            padding: 0.65rem;
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            cursor: pointer;
-            margin-top: 0.5rem;
-        }
-        .btn-login:hover { opacity: 0.9; }
-        .alert {
-            padding: 0.65rem 0.9rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-        .alert-danger { background: #4a1a1a; color: #fc8181; border: 1px solid #742a2a; }
-        .alert-info   { background: #1a2a4a; color: #63b3ed; border: 1px solid #2a4a6a; }
-    </style>
+    <?php $_b = '/' . explode('/', ltrim($_SERVER['SCRIPT_NAME'], '/'))[0]; ?>
+    <link rel="stylesheet" href="<?= $_b ?>/styles/shared/theme.css">
+    <link rel="stylesheet" href="<?= $_b ?>/styles/shared/reset.css">
+    <link rel="stylesheet" href="<?= $_b ?>/styles/energie-theme.css">
+    <link rel="stylesheet" href="<?= $_b ?>/styles/energie.css">
+    <link rel="icon" type="image/x-icon" href="<?= $_b ?>/img/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= $_b ?>/img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?= $_b ?>/img/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?= $_b ?>/img/apple-touch-icon.png">
 </head>
 <body>
 <header>
-    <span>⚡</span>
-    <h1>Energie</h1>
+    <span style="display:flex;align-items:center;gap:0.75rem">
+        <img src="<?= $_b ?>/img/energieLogo_icon.svg" alt="" style="height:32px;width:32px;object-fit:contain">
+        <h1>Energie</h1>
+    </span>
 </header>
 <div class="login-wrap">
     <div class="login-card">

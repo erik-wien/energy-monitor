@@ -189,42 +189,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Einstellungen · Energie</title>
-    <link rel="stylesheet" href="<?= $base ?>/styles/style.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/img/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/img/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/img/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/img/apple-touch-icon.png">
-    <style>
-        .pref-section { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem; }
-        .pref-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-        .pref-card-hdr { padding: 0.75rem 1.25rem; font-weight: 600; font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
-        .pref-card-body { padding: 1.25rem; }
-        .form-group { margin-bottom: 1rem; }
-        .form-group:last-child { margin-bottom: 0; }
-        .form-group label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.35rem; }
-        .form-control {
-            width: 100%; padding: 0.55rem 0.75rem;
-            background: var(--surface); border: 1px solid var(--border);
-            border-radius: 8px; color: var(--text); font-size: 0.9rem;
-        }
-        .form-control:focus { outline: none; border-color: var(--accent); }
-        .btn { padding: 0.55rem 1.25rem; border: none; border-radius: 8px; font-size: 0.9rem; cursor: pointer; transition: opacity .15s; }
-        .btn:hover { opacity: 0.85; }
-        .btn-primary { background: var(--accent); color: #fff; }
-        .btn-group { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 1rem; }
-        .btn-group input[type=radio] { display: none; }
-        .btn-group label { flex: 1; text-align: center; padding: 0.5rem; font-size: 0.85rem; color: var(--muted); cursor: pointer; background: var(--surface); transition: background .15s, color .15s; }
-        .btn-group input[type=radio]:checked + label { background: var(--card); color: var(--text); font-weight: 600; }
-        .alert { padding: 0.6rem 0.9rem; border-radius: 8px; font-size: 0.875rem; margin-bottom: 1rem; }
-        .alert-danger  { background: #4a1a1a; color: #fc8181; border: 1px solid #742a2a; }
-        .alert-success { background: #1a3a2a; color: #68d391; border: 1px solid #276749; }
-        .alert-info    { background: #1a2a4a; color: #63b3ed; border: 1px solid #2a4a6a; }
-        .avatar-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-        .avatar-preview { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; background: var(--border); }
-        .text-muted { color: var(--muted); font-size: 0.8rem; }
-        .input-group { display: flex; gap: 0.5rem; }
-        .input-group .form-control { flex: 1; }
-    </style>
 </head>
 <body>
 <?php $page_type = 'preferences'; require __DIR__ . '/../inc/_header.php'; ?>
@@ -286,7 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="pref-card-hdr">E-Mail-Adresse</div>
             <div class="pref-card-body">
                 <p class="text-muted" style="margin-bottom:.75rem">
-                    Aktuelle Adresse: <strong style="color:var(--text)"><?= $currentEmail ?></strong><br>
+                    Aktuelle Adresse: <strong style="color:var(--color-text)"><?= $currentEmail ?></strong><br>
                     Nach dem Speichern erhalten Sie einen Bestätigungslink an die neue Adresse.
                 </p>
                 <?php if (!empty($errors['email'])): ?>

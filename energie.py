@@ -5,8 +5,10 @@ import argparse
 import configparser
 import csv
 import decimal
+import glob
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, date, timedelta
 
@@ -16,6 +18,7 @@ import requests
 # ── Config ──────────────────────────────────────────────────────────────────
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.ini")
+ARCHIV_DIR  = os.path.join(os.path.dirname(__file__), "_Archiv")
 
 
 def load_config():
@@ -93,14 +96,32 @@ def rebuild_daily_summary(conn):
 # ── Billing ──────────────────────────────────────────────────────────────────
 
 def calculate_cost_brutto(consumed_kwh: float, spot_ct: float, tariff: dict) -> float:
-    """All ct inputs → returns € brutto."""
-    return (
-        consumed_kwh * (
-            (spot_ct + tariff["netz_ct"]) * (1 + tariff["mwst"])
-            + tariff["hofer_aufschlag_ct"]
-        )
-        + tariff["viertelstunden_ct"]
-    ) / 100
+    """
+    Compute gross electricity cost for one quarter-hour slot.
+
+    All per-kWh values in ct/kWh; annual fees in €/yr.
+    Returns cost in €.
+
+    Formula (VAT does NOT apply to consumption tax / Gebrauchsabgabe):
+        net_ct  = epex + provider_surcharge + electricity_tax + renewable_tax
+                  + (meter_fee_eur + renewable_fee_eur) / yearly_kwh_estimate * 100
+        gross_ct = net_ct * (1 + vat_rate) + net_ct * consumption_tax_rate
+        cost_eur = consumed_kwh * gross_ct / 100
+    """
+    annual_ct = (
+        (tariff["meter_fee_eur"] + tariff["renewable_fee_eur"])
+        / tariff["yearly_kwh_estimate"]
+        * 100
+    )
+    net_ct = (
+        spot_ct
+        + tariff["provider_surcharge_ct"]
+        + tariff["electricity_tax_ct"]
+        + tariff["renewable_tax_ct"]
+        + annual_ct
+    )
+    gross_ct = net_ct * (1 + tariff["vat_rate"] + tariff["consumption_tax_rate"])
+    return consumed_kwh * gross_ct / 100
 
 
 # ── Spot Prices ──────────────────────────────────────────────────────────────
@@ -129,7 +150,7 @@ def fetch_prices(cfg, year: int, month: int):
     resp.raise_for_status()
     data = resp.json()
 
-    # Save raw JSON (preserves existing file convention)
+    # Save raw JSON
     json_path = os.path.join(os.path.dirname(__file__), f"spotpreise_{year}_{month:02d}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -154,26 +175,47 @@ def fetch_prices(cfg, year: int, month: int):
         conn.close()
     print(f"✅ Upserted {len(spot_rows)} spot price rows for {year}-{month:02d}")
 
+    dest = os.path.join(ARCHIV_DIR, os.path.basename(json_path))
+    shutil.move(json_path, dest)
+    print(f"📦 Archived → {dest}")
+
 
 # ── Consumption CSV ──────────────────────────────────────────────────────────
 
 
 def parse_consumption_csv(fileobj) -> list[dict]:
-    """Parse the grid-operator CSV (Datum;von;bis;Verbrauch) into row dicts."""
+    """Parse grid-operator CSV into row dicts.
+
+    Handles two formats:
+    - Old export:  Datum;von;bis;Verbrauch
+    - QuarterHourValues: Datum;Zeit von;Zeit bis;<meter-id> - Verbrauch [kWh]
+    """
     reader = csv.DictReader(fileobj, delimiter=";")
+    raw_fields = [f.strip() for f in (reader.fieldnames or []) if f]
+
+    time_col = "von" if "von" in raw_fields else "Zeit von"
+    if "Verbrauch" in raw_fields:
+        kwh_col = "Verbrauch"
+    else:
+        kwh_col = next((f for f in raw_fields if "Verbrauch" in f or "kWh" in f), None)
+
+    if not kwh_col:
+        return []
+
     rows = []
     for row in reader:
         row = {k.strip(): v.strip() for k, v in row.items() if k}
-        if not row.get("Datum") or not row.get("von") or not row.get("Verbrauch"):
+        if not row.get("Datum") or not row.get(time_col) or not row.get(kwh_col):
             continue
         try:
-            consumed = float(row["Verbrauch"].replace(",", "."))
+            consumed = float(row[kwh_col].replace(",", "."))
             parts = row["Datum"].split(".")
             # Handle DD.MM.YYYY or DD.MM.YY
             year = parts[2] if len(parts[2]) == 4 else "20" + parts[2]
-            ts = f"{year}-{parts[1].zfill(2)}-{parts[0].zfill(2)}T{row['von']}"
+            time_val = row[time_col]
+            ts = f"{year}-{parts[1].zfill(2)}-{parts[0].zfill(2)}T{time_val}"
             # Normalise HH:MM → HH:MM:SS
-            if row["von"].count(":") == 1:
+            if time_val.count(":") == 1:
                 ts += ":00"
             rows.append({"ts": ts, "consumed_kwh": consumed})
         except (IndexError, ValueError):
@@ -237,6 +279,7 @@ def parse_consumption_xlsx(filepath: str) -> list[dict]:
 
 
 def import_csv(cfg, filepath: str):
+    filepath = os.path.abspath(filepath)
     print(f"⬇ Importing consumption file: {filepath}")
     if filepath.lower().endswith(".xlsx"):
         rows = parse_consumption_xlsx(filepath)
@@ -254,81 +297,9 @@ def import_csv(cfg, filepath: str):
         conn.close()
     print(f"✅ Imported {n} consumption rows")
 
-
-# ── Playwright Scraper ───────────────────────────────────────────────────────
-
-
-def fetch_consumption(cfg, year: int, month: int):
-    """Scrape monthly consumption XLSX from Hofer portal using Playwright."""
-    from playwright.sync_api import sync_playwright
-    import tempfile
-
-    username  = cfg["hofer"]["username"]
-    password  = cfg["hofer"]["password"]
-    meter_id  = cfg["hofer"]["meter_id"]
-    login_url = "https://www.hofer-grünstrom.at/steward/signin.html"
-    data_url  = (
-        f"https://www.hofer-grünstrom.at/app/portal/energymanager"
-        f"/{meter_id}/profile?year={year}&month={month}"
-    )
-
-    print(f"⬇ Scraping consumption {year}-{month:02d} via Playwright …")
-
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        try:
-            context = browser.new_context(accept_downloads=True)
-            page    = context.new_page()
-
-            # 1. Login
-            page.goto(login_url, wait_until="networkidle")
-            # Try common selectors for email/password — adjust if login fails
-            page.locator("input[type='email'], input[name='email'], input[name='username'], input[id*='email'], input[id*='user']").first.fill(username)
-            page.locator("input[type='password']").fill(password)
-            page.locator("button[type='submit'], button:has-text('Anmelden'), button:has-text('Login'), input[type='submit']").first.click()
-            page.wait_for_load_state("networkidle")
-
-            # 2. Navigate to energy manager profile for the requested month
-            page.goto(data_url, wait_until="networkidle")
-
-            # 3. Dismiss cookie consent popup if present (blocks click in headless)
-            try:
-                page.locator("#ppms_cm_agree-to-all").click(timeout=5000)
-                page.wait_for_selector("#ppms_cm_popup_overlay", state="hidden", timeout=10000)
-            except Exception as e:
-                print(f"   ⚠ Cookie consent handling: {e}")
-
-            # 4. Click download button
-            with page.expect_download() as dl_info:
-                page.get_by_text("Ausgewählte Daten herunterladen").click()
-            download = dl_info.value
-
-            # 5. Save to temp file
-            suffix = ".xlsx"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp_path = tmp.name
-            download.save_as(tmp_path)
-        finally:
-            browser.close()
-
-    print(f"   Downloaded: {download.suggested_filename} → {tmp_path}")
-
-    try:
-        rows = parse_consumption_xlsx(tmp_path)
-    finally:
-        os.unlink(tmp_path)
-
-    if not rows:
-        print(f"⚠ No rows parsed for {year}-{month:02d}")
-        return
-
-    conn = get_db(cfg)
-    try:
-        n = _compute_and_upsert_consumption(conn, rows)
-        rebuild_daily_summary(conn)
-    finally:
-        conn.close()
-    print(f"✅ Scraped and stored {n} consumption rows for {year}-{month:02d}")
+    dest = os.path.join(ARCHIV_DIR, os.path.basename(filepath))
+    shutil.move(filepath, dest)
+    print(f"📦 Archived → {dest}")
 
 
 # ── Slack Notifications ──────────────────────────────────────────────────────
@@ -496,24 +467,13 @@ class SlackNotifier:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _next_month(year: int, month: int) -> str:
-    """Return first day of the following month as 'YYYY-MM-DD'."""
-    if month == 12:
-        return f"{year + 1}-01-01"
-    return f"{year}-{month + 1:02d}-01"
-
-
-# ── CLI placeholder ──────────────────────────────────────────────────────────
+# ── CLI ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Energie pipeline")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("fetch-prices")
-    p.add_argument("--year",  type=int, default=datetime.now().year)
-    p.add_argument("--month", type=int, default=datetime.now().month)
-
-    p = sub.add_parser("fetch-consumption")
     p.add_argument("--year",  type=int, default=datetime.now().year)
     p.add_argument("--month", type=int, default=datetime.now().month)
 
@@ -531,31 +491,15 @@ def main():
 
     if args.cmd == "fetch-prices":
         fetch_prices(cfg, args.year, args.month)
-    elif args.cmd == "fetch-consumption":
-        fetch_consumption(cfg, args.year, args.month)
     elif args.cmd == "fetch-all":
         fetch_prices(cfg, args.year, args.month)
-        conn = get_db(cfg)
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM readings WHERE ts >= %s AND ts < %s AND consumed_kwh > 0",
-                (f"{args.year}-{args.month:02d}-01", _next_month(args.year, args.month))
-            )
-            (count,) = cur.fetchone()
-            cur.close()
-        finally:
-            conn.close()
-        if count > 0:
-            print(f"ℹ Consumption data already present for {args.year}-{args.month:02d} ({count} rows), skipping scrape.")
+        scrapes_dir = os.path.join(os.path.dirname(__file__), "scrapes")
+        csv_files = sorted(glob.glob(os.path.join(scrapes_dir, "QuarterHourValues-*.csv")))
+        if not csv_files:
+            print("⚠ No QuarterHourValues-*.csv found in scrapes/. Skipping consumption import.")
         else:
-            fetch_consumption(cfg, args.year, args.month)
-        # Rebuild daily summary after all data is in
-        conn2 = get_db(cfg)
-        try:
-            rebuild_daily_summary(conn2)
-        finally:
-            conn2.close()
+            for path in csv_files:
+                import_csv(cfg, path)
     elif args.cmd == "import-csv":
         import_csv(cfg, args.file)
     elif args.cmd == "notify":

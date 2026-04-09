@@ -36,9 +36,9 @@ Key components:
 |---|---|
 | `inc/initialize.php` | Security headers (CSP, HSTS), MySQLi `$con` for auth DB, auth library bootstrap |
 | `inc/db.php` | Includes `initialize.php`, opens PDO `$pdo` for data DB, derives `$base` URL prefix |
-| `inc/_chart_page.php` | Shared drilldown template: KPI strip, visibility pills, Chart.js datasets, invoice table |
+| `inc/_chart_page.php` | Shared drilldown template: KPI strip, visibility pills, Chart.js datasets, print invoice popup |
 | `inc/_header.php` | Navigation bar, user menu, theme switcher |
-| `web/api.php` | Single JSON endpoint for all chart data (type=daily|weekly|monthly|yearly|set-theme) |
+| `web/api.php` | Single JSON endpoint for all chart data (type=daily|weekly|monthly|yearly|set-theme|trigger-import) |
 
 ### MariaDB
 
@@ -120,7 +120,10 @@ Energie/
 │   ├── logout.php          Session destroy (CSRF-protected POST)
 │   ├── avatar.php          Serves profile image from DB blob
 │   ├── confirm_email.php   Email change confirmation handler
-│   ├── styles/style.css    Full stylesheet
+│   ├── styles/
+│   │   ├── shared/         → ~/Git/css (shared CSS library symlink)
+│   │   ├── energie-theme.css  Project color palette overrides
+│   │   └── energie.css     App-specific styles
 │   └── img/                Static assets (favicon, SVG logo)
 │
 ├── vendor/                 Composer — erikr/auth
@@ -167,7 +170,9 @@ A complete round-trip for a daily drilldown page:
 4. Browser → GET /energie.test/api.php?type=daily&date=2026-04-07
    api.php checks $_SESSION['loggedin'] → 401 if missing
    Queries readings for the date + historical aggregates (GROUP BY TIME(ts))
-   Returns JSON: labels, cost, consumption, tariff, hist_tariff_*, hist_kwh_*
+   Returns JSON: labels, cost, consumption, tariff, hist_tariff_*, hist_kwh_*,
+   plus invoice arrays (epex, aufschlag, abgaben, gebrauchsabgabe, mwst_tax,
+   gesamt_variable, meter_fee_prop, renewable_fee_prop, period_start, period_end)
 
 5. Chart.js callback
    Creates Chart with 10 datasets (cost, consumption, tariff, 3×hist tariff,
@@ -175,6 +180,9 @@ A complete round-trip for a daily drilldown page:
    Snapshots all six scale boundaries (_yMin/_yMax, _y2Min/…, _y3Min/…)
    Applies stored visibility state from localStorage
    Renders chart with fade-in animation
+   Calls buildPrintContent() to pre-build the invoice popup HTML (stored in _printHTML)
 ```
+
+**Trigger-import:** A `POST api.php?type=trigger-import` request (from the header import button) spawns `energie.py import-csv` via `proc_open()` with an array argument list (no shell string, safe against injection). The response includes the captured stdout/stderr log.
 
 **Why two requests?** Separating HTML from data keeps the page responsive during the DB query. The KPI numbers (server-rendered) appear instantly; the chart fades in once the data arrives. It also enables the same `api.php` endpoint to serve Slack/other consumers.

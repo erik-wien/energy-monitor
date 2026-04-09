@@ -76,7 +76,10 @@ Energie/
 │   ├── logout.php          Logout + CSRF-protected form submit
 │   ├── avatar.php          Serves profile picture from DB blob
 │   ├── confirm_email.php   Email change confirmation
-│   ├── styles/style.css    Single stylesheet (dark/light/auto themes)
+│   ├── styles/
+│   │   ├── shared/         Symlink → ~/Git/css (shared CSS library)
+│   │   ├── energie-theme.css  Energie color palette (--color-* overrides)
+│   │   └── energie.css     App-specific styles (header, tiles, charts, etc.)
 │   └── img/                Favicons, logo
 ├── vendor/                 Composer — erikr/auth shared auth library
 ├── scrapes/                Drop incoming CSVs here; processed → _Archiv/

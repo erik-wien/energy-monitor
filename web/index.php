@@ -44,18 +44,17 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Energie</title>
-    <link rel="stylesheet" href="<?= $base ?>/styles/style.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
+    <link rel="icon" type="image/x-icon" href="<?= $base ?>/img/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/img/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/img/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/img/apple-touch-icon.png">
 </head>
 <body>
-<header>
-    <span style="display:flex;align-items:center;gap:0.75rem">
-        <span>⚡</span>
-        <h1>Energie</h1>
-    </span>
-    <nav class="header-nav">
-        <a href="<?= $base ?>/logout.php">Abmelden</a>
-    </nav>
-</header>
+<?php $page_type = 'index'; require __DIR__ . '/../inc/_header.php'; ?>
 <main>
     <div class="tiles">
 

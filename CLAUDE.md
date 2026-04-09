@@ -78,6 +78,17 @@ Only external dependency: `requests` (used in script 2). All other imports are s
 
 PHP app served at `/energie/`. All pages are login-gated.
 
+### CSS Architecture
+
+Energie uses a shared CSS library (`~/Git/css`, symlinked at `web/styles/shared/`) plus project-specific files:
+
+1. `shared/theme.css` — base CSS custom properties (`--color-*`)
+2. `shared/reset.css` — universal reset, body defaults
+3. `energie-theme.css` — Energie's dark-first color palette (overrides shared vars, adds `--color-accent`, `--color-green`, `--color-blue`)
+4. `energie.css` — all app-specific styles (header, tiles, charts, KPI, invoice, login, preferences, alerts)
+
+All CSS variables use the `--color-*` prefix. Inline `style=""` attributes in PHP templates must also use `--color-*` names.
+
 ### Auth system
 
 Authenticates against the shared `auth_accounts` MariaDB table. Auth code is provided by the `erikr/auth` library (Composer).
@@ -94,13 +105,13 @@ Authenticates against the shared `auth_accounts` MariaDB table. Auth code is pro
 |------|------|
 | `inc/initialize.php` | Security headers (CSP nonce, HSTS, etc.), MySQLi `$con`, session start, auth library bootstrap, `getUserIpAddr()`, `addAlert()`, `appendLog()`, `auth_require()` |
 | `inc/db.php` | Includes `initialize.php`, opens PDO `$pdo`, sets `$base` URL prefix |
-| `web/login.php` | Login form (Energie dark CSS, no Bootstrap) |
+| `web/login.php` | Login form (uses shared CSS + Energie theme) |
 | `web/authentication.php` | POST handler: CSRF check → auth library → redirect |
 | `web/logout.php` | Auth library logout → redirect to `login.php` |
 | `data/ratelimit.json` | Rate-limit state file (writable by web server) |
 | `data/.htaccess` | Blocks direct HTTP access to `data/` |
 
-**Auth configuration:** `AUTH_DB_PREFIX = ''` (Energie connects directly to the auth database). Shared auth code lives in `/Users/erikr/Git/auth`.
+**Auth configuration:** `AUTH_DB_PREFIX = ''` (Energie connects directly to the auth database). Shared auth code lives in `/Users/erikr/Git/auth` (via Composer as `erikr/auth`). Auth logic is **not in scope for this project** — do not modify auth behaviour here. If you spot a security issue or improvement in how auth works, flag it as a recommendation for the auth library.
 
 **Protecting a page:** add `auth_require();` after `require_once db.php`. For JSON endpoints return 401 inline instead of redirecting.
 
@@ -109,3 +120,11 @@ Authenticates against the shared `auth_accounts` MariaDB table. Auth code is pro
 **Session fields set on login:** `loggedin`, `sId`, `id`, `username`, `email`, `rights`.
 
 **Config:** `/opt/homebrew/etc/energie-config.ini` — both `initialize.php` (MySQLi) and `db.php` (PDO) read the `[db]` section.
+
+## Security Patterns
+
+Auth is provided by `erikr/auth` — security decisions (session handling, CSRF tokens, rate limiting, bcrypt) live there. In this project:
+
+- **Logout must be POST + CSRF.** A plain `<a href="logout.php">` allows logout CSRF. Use a `<form method="post">` with `<?= csrf_input() ?>` and a `<button type="submit" class="dropdown-link-btn">`.
+- **MIME types from the DB must be whitelisted** before setting `Content-Type`. Allowed: `image/jpeg`, `image/png`, `image/gif`, `image/webp`. Never reflect a raw DB value into a response header.
+- If you notice a security issue in auth behaviour (session fixation, token handling, etc.), flag it as a recommendation — do not patch it in this project directly.
