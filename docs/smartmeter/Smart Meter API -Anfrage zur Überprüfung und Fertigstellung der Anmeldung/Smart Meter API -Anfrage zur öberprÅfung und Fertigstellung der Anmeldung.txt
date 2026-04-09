@@ -1,0 +1,12 @@
+An: support.sm-portal@wienit.at
+
+Betreff: Anfrage zur Überprüfung und Fertigstellung der Anmeldung zur Smart Meter-Public API
+
+Inhalt:
+Ich bitte um Überprüfung und Fertigstellung der Anmeldung zur Smart Meter-Public API
+
+
+Applikationsname (aus dem WSTW Developer-Portal):
+
+
+Smart Meter-Portal E-Mail-Adresse:

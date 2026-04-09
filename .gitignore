@@ -10,3 +10,19 @@ tests/__pycache__/
 .DS_Store
 spotpreise_*.json
 verbrauch_*.json
+
+# Private data and archives
+_Archiv/
+scrapes/
+numbers/
+logs/
+data/ratelimit.json
+
+# Contains hardcoded DB credentials
+deploy.sh
+
+# Secrets
+docs/Slack credentials.md
+
+# Local tooling state
+.superpowers/

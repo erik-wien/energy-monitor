@@ -1,15 +1,49 @@
 <?php
-// Expected vars from including file:
-// $title        string       Page <title>
-// $period_label string       e.g. "Di 01.04.2026" or "KW14 · 30.03–05.04.2026"
-// $prev_url     string       URL for ← link
-// $prev_label   string       Label for ← link e.g. "Mo 30.03.2026" / "KW13"
-// $next_url     string|null  URL for → link (null if no future data)
-// $next_label   string       Label for → link
-// $api_url      string       URL passed to Chart.js fetch
-// $kpi_kwh      float
-// $kpi_eur      float
-// $kpi_ct       float
+require_once __DIR__ . '/../inc/db.php';
+auth_require();
+
+$year  = (int)($_GET['year']  ?? date('Y'));
+$month = (int)($_GET['month'] ?? (int)date('n'));
+if ($month < 1)  { $month = 12; $year--; }
+if ($month > 12) { $month = 1;  $year++; }
+
+$end_ymd   = sprintf('%04d-%02d-01', $year, $month);
+$start_ymd = date('Y-m-01', strtotime('-12 months', strtotime($end_ymd)));
+
+// KPIs
+$stmt = $pdo->prepare(
+    "SELECT SUM(consumed_kwh) AS kwh, SUM(cost_brutto) AS eur, AVG(avg_spot_ct) AS ct
+     FROM daily_summary
+     WHERE day >= ? AND day < DATE_ADD(?, INTERVAL 1 MONTH)"
+);
+$stmt->execute([$start_ymd, $end_ymd]);
+$kpi = $stmt->fetch();
+$kpi_kwh = (float)($kpi['kwh'] ?? 0);
+$kpi_eur = (float)($kpi['eur'] ?? 0);
+$kpi_ct  = (float)($kpi['ct']  ?? 0);
+
+// Navigation
+$prev_month = $month - 1; $prev_year = $year;
+if ($prev_month < 1)  { $prev_month = 12; $prev_year--; }
+$next_month = $month + 1; $next_year = $year;
+if ($next_month > 12) { $next_month = 1;  $next_year++; }
+
+$now_year  = (int)date('Y');
+$now_month = (int)date('n');
+$is_future = $next_year > $now_year || ($next_year === $now_year && $next_month > $now_month);
+
+$month_names = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+$start_label = $month_names[((int)date('n', strtotime($start_ymd))) - 1] . ' ' . date('Y', strtotime($start_ymd));
+$end_label   = $month_names[$month - 1] . ' ' . $year;
+$period_label = $start_label . ' – ' . $end_label;
+
+$prev_url = "$base/yearly.php?year=$prev_year&month=$prev_month";
+$next_url = $is_future ? null : "$base/yearly.php?year=$next_year&month=$next_month";
+$next_label = $month_names[$next_month - 1] . ' ' . $next_year;
+$prev_label = $month_names[$prev_month - 1] . ' ' . $prev_year;
+
+$api_url    = "$base/api.php?type=yearly&year=$year&month=$month";
+$page_type  = 'yearly';
 
 function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' kWh'; }
 function fmt_eur($v) { return '€ ' . number_format($v, 2, ',', '.'); }
@@ -20,7 +54,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= htmlspecialchars($title) ?> · Energie</title>
+    <title><?= htmlspecialchars($period_label) ?> · Energie</title>
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
@@ -32,14 +66,12 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" nonce="<?= $_cspNonce ?>"></script>
 </head>
 <body>
-<?php require __DIR__ . '/_header.php'; ?>
+<?php require __DIR__ . '/../inc/_header.php'; ?>
 <main>
     <div class="nav-bar">
         <a href="<?= htmlspecialchars($prev_url) ?>">← <?= htmlspecialchars($prev_label) ?></a>
         <div class="period-nav">
             <span class="period-label"><?= htmlspecialchars($period_label) ?></span>
-            <input type="date" id="date-picker" class="date-input-inline"
-                   value="<?= htmlspecialchars($current_date_iso) ?>">
             <button type="button" id="print-btn" class="print-btn" title="Aufstellung drucken">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
@@ -68,25 +100,22 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
             <div class="value tariff"><?= fmt_ct($kpi_ct) ?></div>
         </div>
     </div>
-    <div class="chart-controls">
+    <div class="chart-controls" style="margin-top:0.75rem">
         <button type="button" class="chart-pill chart-pill--cost"    data-key="cost">Kosten</button>
         <button type="button" class="chart-pill chart-pill--kwh"     data-key="kwh">Verbrauch</button>
         <button type="button" class="chart-pill chart-pill--hkwh"    data-key="hkwh">hist. Verbr.</button>
         <button type="button" class="chart-pill chart-pill--hkband"  data-key="hkband">hist. Verbr. Band</button>
         <button type="button" class="chart-pill chart-pill--tariff"  data-key="tariff">Tarif</button>
-        <button type="button" class="chart-pill chart-pill--minmax"  data-key="minmax" id="btn-minmax">Tarif Band</button>
         <button type="button" class="chart-pill chart-pill--htariff" data-key="htariff">hist. Tarif</button>
         <button type="button" class="chart-pill chart-pill--htband"  data-key="htband">hist. Tarif Band</button>
     </div>
-    <div class="chart-container">
+    <div class="chart-container" style="margin-top:1rem">
         <canvas id="chart"></canvas>
     </div>
 </main>
 
 <script nonce="<?= $_cspNonce ?>">
-const isDailyPage   = <?= json_encode($page_type === 'daily') ?>;
-const isWeeklyPage  = <?= json_encode($page_type === 'weekly') ?>;
-const periodLabel   = <?= json_encode($period_label) ?>;
+const periodLabel = <?= json_encode($period_label) ?>;
 
 let _printHTML = null;
 let _blobUrl   = null;
@@ -94,22 +123,8 @@ let _blobUrl   = null;
 fetch(<?= json_encode($api_url) ?>)
   .then(r => r.json())
   .then(data => {
-    const DE_DAYS = ['So','Mo','Di','Mi','Do','Fr','Sa'];
-    const ctx     = document.getElementById('chart').getContext('2d');
-    const ptR     = data.labels.length > 50 ? 0 : 3;
-
-    const shadowDatasets = isDailyPage ? [] : [
-      {
-        type: 'line', label: '_tariff_max', data: data.max_spot,
-        borderColor: 'transparent', backgroundColor: 'rgba(99,179,237,0.13)',
-        pointRadius: 0, fill: '+1', tension: 0.3, yAxisID: 'y3', order: 5,
-      },
-      {
-        type: 'line', label: '_tariff_min', data: data.min_spot,
-        borderColor: 'transparent', backgroundColor: 'transparent',
-        pointRadius: 0, fill: false, tension: 0.3, yAxisID: 'y3', order: 4,
-      },
-    ];
+    const DE_MO = ['Jan','Feb','M\u00e4r','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+    const ctx   = document.getElementById('chart').getContext('2d');
 
     window._energieChart = new Chart(ctx, {
       data: {
@@ -118,18 +133,17 @@ fetch(<?= json_encode($api_url) ?>)
           {
             type: 'line', label: 'Kosten (€)', data: data.cost,
             borderColor: '#e94560', backgroundColor: 'rgba(233,69,96,0.08)',
-            borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y', order: 2,
+            borderWidth: 2, pointRadius: 3, tension: 0.3, yAxisID: 'y', order: 2,
           },
           {
             type: 'line', label: 'Verbrauch (kWh)', data: data.consumption,
             borderColor: '#68d391', backgroundColor: 'rgba(104,211,145,0.1)',
-            borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y2', order: 1,
+            borderWidth: 2, pointRadius: 3, tension: 0.3, yAxisID: 'y2', order: 1,
           },
-          ...shadowDatasets,
           {
             type: 'line', label: 'Tarif (ct/kWh)', data: data.tariff,
             borderColor: '#63b3ed', backgroundColor: 'rgba(99,179,237,0.1)',
-            borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y3', order: 0,
+            borderWidth: 2, pointRadius: 3, tension: 0.3, yAxisID: 'y3', order: 0,
           },
           {
             type: 'line', label: '_htariff_max', data: data.hist_tariff_max,
@@ -144,7 +158,7 @@ fetch(<?= json_encode($api_url) ?>)
           {
             type: 'line', label: 'Ø Tarif (ct/kWh)', data: data.hist_tariff_avg,
             borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.08)',
-            borderWidth: 1.5, pointRadius: ptR, tension: 0.3, yAxisID: 'y3', order: 3,
+            borderWidth: 1.5, pointRadius: 3, tension: 0.3, yAxisID: 'y3', order: 3,
             borderDash: [5, 3],
           },
           {
@@ -160,7 +174,7 @@ fetch(<?= json_encode($api_url) ?>)
           {
             type: 'line', label: 'Ø Verbrauch (kWh)', data: data.hist_kwh_avg,
             borderColor: '#38a169', backgroundColor: 'rgba(56,161,105,0.08)',
-            borderWidth: 1.5, pointRadius: ptR, tension: 0.3, yAxisID: 'y2', order: 4,
+            borderWidth: 1.5, pointRadius: 3, tension: 0.3, yAxisID: 'y2', order: 4,
             borderDash: [5, 3],
           },
         ]
@@ -176,7 +190,7 @@ fetch(<?= json_encode($api_url) ?>)
             labels: {
               color: '#e2e8f0',
               usePointStyle: true,
-              pointStyle: 'line',
+              pointStyle: 'rectRounded',
               filter: item => !item.text.startsWith('_'),
             }
           },
@@ -186,32 +200,13 @@ fetch(<?= json_encode($api_url) ?>)
           }
         },
         scales: {
-          x: {
-            ticks: {
-              color: '#718096',
-              maxTicksLimit: 24,
-              callback: (val, i) => {
-                if (isDailyPage)  return (data.labels[i] ?? '').substring(0, 2);
-                if (isWeeklyPage) {
-                  const raw = data.dates?.[i];
-                  return raw ? DE_DAYS[new Date(raw + 'T00:00:00').getDay()] : '';
-                }
-                return (data.labels[i] ?? '').substring(0, 2); // monthly: "DD"
-              }
-            },
-            grid: { color: '#2d3748' }
-          },
+          x:  { ticks: { color: '#718096' }, grid: { color: '#2d3748' } },
           y:  { ticks: { color: '#fc8181' }, grid: { color: '#2d3748' }, position: 'left',
-                title: { display: true, text: 'Kosten (€)', color: '#fc8181' },
-                min: isDailyPage ? -0.20 : undefined,
-                max: isDailyPage ?  0.50 : data.maxCost },
+                title: { display: true, text: 'Kosten (€)', color: '#fc8181' } },
           y2: { ticks: { color: '#68d391' }, grid: { display: false }, position: 'right',
-                title: { display: true, text: 'Verbrauch (kWh)', color: '#68d391' },
-                max: data.maxKwh },
+                title: { display: true, text: 'Verbrauch (kWh)', color: '#68d391' } },
           y3: { ticks: { color: '#63b3ed' }, grid: { display: false }, position: 'right',
-                title: { display: true, text: 'Tarif (ct/kWh)', color: '#63b3ed' },
-                min: isDailyPage ? -25 : undefined,
-                max: isDailyPage ?  35  : undefined }
+                title: { display: true, text: 'Tarif (ct/kWh)', color: '#63b3ed' } },
         }
       }
     });
@@ -222,21 +217,19 @@ fetch(<?= json_encode($api_url) ?>)
     _ch._y3Min = _ch.scales.y3?.min; _ch._y3Max = _ch.scales.y3?.max;
     if (window._applyChartVis) window._applyChartVis(window._energieChart);
 
-    _printHTML = buildPrintContent(data, DE_DAYS);
+    _printHTML = buildPrintContent(data, DE_MO);
   });
 
-function buildPrintContent(data, DE_DAYS) {
-  const invDp   = isDailyPage ? 4 : 3;
-  const pad2    = n => String(n).padStart(2, '0');
-  const fmtN    = (v, dp) => (v < 0 ? '\u2212' : '') + '\u20ac\u00a0' + Math.abs(v).toFixed(dp).replace('.', ',');
-  const fmtI    = v => fmtN(v, invDp);
-  const fmt2    = v => fmtN(v, 2);
-  const fmtKwh  = v => Math.abs(v).toFixed(invDp).replace('.', ',') + '\u00a0kWh';
-  const fmtCt   = v => Math.abs(v).toFixed(2).replace('.', ',') + '\u00a0ct/kWh';
-  const fmtDE   = iso => iso.slice(8,10) + '.' + iso.slice(5,7) + '.' + iso.slice(0,4);
-  const esc     = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function buildPrintContent(data, DE_MO) {
+  const pad2  = n => String(n).padStart(2, '0');
+  const fmtN   = (v, dp) => (v < 0 ? '\u2212' : '') + '\u20ac\u00a0' + Math.abs(v).toFixed(dp).replace('.', ',');
+  const fmt2   = v => fmtN(v, 2);
+  const fmtKwh = v => Math.abs(v).toFixed(2).replace('.', ',') + '\u00a0kWh';
+  const fmtCt  = v => Math.abs(v).toFixed(2).replace('.', ',') + '\u00a0ct/kWh';
+  const fmtDE = iso => iso.slice(8,10) + '.' + iso.slice(5,7) + '.' + iso.slice(0,4);
+  const esc   = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  const now = new Date();
+  const now    = new Date();
   const stand  = pad2(now.getDate()) + '.' + pad2(now.getMonth()+1) + '.' + now.getFullYear()
                + ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes());
   const period = esc(periodLabel) + ' (' + fmtDE(data.period_start) + ' \u2013 ' + fmtDE(data.period_end) + ')';
@@ -244,48 +237,30 @@ function buildPrintContent(data, DE_DAYS) {
   let sumKwh = 0, sumEpxW = 0, sumAuf = 0, sumAbg = 0, sumGba = 0, sumMwst = 0, sumGes = 0;
   const bodyParts = [];
 
-  const addRow = (lbl, kwh, epx, auf, abg, gba, mwst, ges) => {
+  data.months.forEach((mo, i) => {
+    const [y, m] = mo.split('-');
+    const lbl  = DE_MO[parseInt(m, 10) - 1] + ' ' + y;
+    const kwh  = data.consumption?.[i]     ?? 0;
+    const epx  = data.epex?.[i]            ?? 0;
+    const auf  = data.aufschlag?.[i]       ?? 0;
+    const abg  = data.abgaben?.[i]         ?? 0;
+    const gba  = data.gebrauchsabgabe?.[i] ?? 0;
+    const mwst = data.mwst_tax?.[i]        ?? 0;
+    const ges  = data.gesamt_variable?.[i] ?? data.cost[i] ?? 0;
+    sumKwh += kwh; sumEpxW += kwh * epx; sumAuf += auf; sumAbg += abg; sumGba += gba; sumMwst += mwst; sumGes += ges;
     bodyParts.push(
       '<tr>'
       + '<td>' + esc(lbl) + '</td>'
       + '<td>' + fmtKwh(kwh) + '</td>'
       + '<td>' + fmtCt(epx)  + '</td>'
-      + '<td>' + fmtI(auf)  + '</td>'
-      + '<td>' + fmtI(abg)  + '</td>'
-      + '<td>' + fmtI(gba)  + '</td>'
-      + '<td>' + fmtI(mwst) + '</td>'
-      + '<td' + (ges < 0 ? ' class="neg"' : '') + '>' + fmtI(ges) + '</td>'
+      + '<td>' + fmt2(auf)  + '</td>'
+      + '<td>' + fmt2(abg)  + '</td>'
+      + '<td>' + fmt2(gba)  + '</td>'
+      + '<td>' + fmt2(mwst) + '</td>'
+      + '<td' + (ges < 0 ? ' class="neg"' : '') + '>' + fmt2(ges) + '</td>'
       + '</tr>'
     );
-    sumKwh += kwh; sumEpxW += kwh * epx; sumAuf += auf; sumAbg += abg; sumGba += gba; sumMwst += mwst; sumGes += ges;
-  };
-
-  if (isDailyPage) {
-    data.labels.forEach((lbl, i) => addRow(
-      lbl.substring(0, 5),
-      data.consumption?.[i]     ?? 0,
-      data.epex?.[i]            ?? 0,
-      data.aufschlag?.[i]       ?? 0,
-      data.abgaben?.[i]         ?? 0,
-      data.gebrauchsabgabe?.[i] ?? 0,
-      data.mwst_tax?.[i]        ?? 0,
-      data.gesamt_variable?.[i] ?? data.cost[i] ?? 0
-    ));
-  } else {
-    data.dates.forEach((iso, i) => {
-      const d = new Date(iso + 'T00:00:00');
-      addRow(
-        DE_DAYS[d.getDay()] + ' ' + iso.slice(8,10) + '.' + iso.slice(5,7) + '.',
-        data.consumption?.[i]     ?? 0,
-        data.epex?.[i]            ?? 0,
-        data.aufschlag?.[i]       ?? 0,
-        data.abgaben?.[i]         ?? 0,
-        data.gebrauchsabgabe?.[i] ?? 0,
-        data.mwst_tax?.[i]        ?? 0,
-        data.gesamt_variable?.[i] ?? data.cost[i] ?? 0
-      );
-    });
-  }
+  });
 
   const mfp   = data.meter_fee_prop    ?? 0;
   const rfp   = data.renewable_fee_prop ?? 0;
@@ -349,7 +324,7 @@ function buildPrintContent(data, DE_DAYS) {
     + '</div>'
     + '<table>'
     + '<thead><tr>'
-    + '<th>' + (isDailyPage ? 'Zeit' : 'Tag') + '</th>'
+    + '<th>Monat</th>'
     + '<th>Verbrauch</th><th>EPEX</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Gesamt</th>'
     + '</tr></thead>'
     + '<tbody>' + bodyParts.join('') + '</tbody>'
@@ -367,40 +342,11 @@ document.getElementById('print-btn').addEventListener('click', () => {
   if (win) win.addEventListener('load', () => { win.focus(); win.print(); });
 });
 
-// Date picker
-(function() {
-  const pageType = <?= json_encode($page_type) ?>;
-  const base     = <?= json_encode($base) ?>;
-  const picker   = document.getElementById('date-picker');
-
-  picker.addEventListener('change', () => {
-    const val = picker.value;
-    if (!val) return;
-    const d = new Date(val + 'T00:00:00');
-    if (pageType === 'daily') {
-      window.location = base + '/daily.php?date=' + val;
-    } else if (pageType === 'weekly') {
-      const tmp = new Date(d);
-      tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
-      const yearStart = new Date(tmp.getFullYear(), 0, 1);
-      const week = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
-      window.location = base + '/weekly.php?year=' + tmp.getFullYear() + '&week=' + week;
-    } else {
-      window.location = base + '/monthly.php?year=' + d.getFullYear() + '&month=' + (d.getMonth() + 1);
-    }
-  });
-})();
-
 // Dataset visibility controls
 (function() {
-  const storageKey = 'energie-vis-' + <?= json_encode($page_type) ?>;
-  const defaults   = { cost: true, kwh: true, tariff: true, minmax: true, htariff: true, htband: true, hkwh: true, hkband: true };
+  const storageKey = 'energie-vis-yearly';
+  const defaults   = { cost: true, kwh: true, tariff: true, htariff: true, htband: true, hkwh: true, hkband: true };
   let vis = Object.assign({}, defaults, JSON.parse(localStorage.getItem(storageKey) || '{}'));
-
-  if (isDailyPage) {
-    const btn = document.getElementById('btn-minmax');
-    if (btn) btn.style.display = 'none';
-  }
 
   document.querySelectorAll('.chart-controls .chart-pill[data-key]').forEach(btn => {
     btn.classList.toggle('active', vis[btn.dataset.key] !== false);
@@ -409,14 +355,13 @@ document.getElementById('print-btn').addEventListener('click', () => {
   function applyVis(chart) {
     chart.data.datasets.forEach((ds, i) => {
       const meta = chart.getDatasetMeta(i);
-      if      (ds.label === 'Kosten (€)')          meta.hidden = !vis.cost;
-      else if (ds.label === 'Verbrauch (kWh)')     meta.hidden = !vis.kwh;
-      else if (ds.label === 'Tarif (ct/kWh)')      meta.hidden = !vis.tariff;
-      else if (ds.label.startsWith('_tariff'))      meta.hidden = !vis.minmax;
-      else if (ds.label === 'Ø Tarif (ct/kWh)')    meta.hidden = !vis.htariff;
-      else if (ds.label.startsWith('_htariff'))     meta.hidden = !vis.htband;
-      else if (ds.label === 'Ø Verbrauch (kWh)')   meta.hidden = !vis.hkwh;
-      else if (ds.label.startsWith('_hkwh'))        meta.hidden = !vis.hkband;
+      if      (ds.label === 'Kosten (€)')         meta.hidden = !vis.cost;
+      else if (ds.label === 'Verbrauch (kWh)')    meta.hidden = !vis.kwh;
+      else if (ds.label === 'Tarif (ct/kWh)')     meta.hidden = !vis.tariff;
+      else if (ds.label === 'Ø Tarif (ct/kWh)')   meta.hidden = !vis.htariff;
+      else if (ds.label.startsWith('_htariff'))    meta.hidden = !vis.htband;
+      else if (ds.label === 'Ø Verbrauch (kWh)')  meta.hidden = !vis.hkwh;
+      else if (ds.label.startsWith('_hkwh'))       meta.hidden = !vis.hkband;
     });
     chart.options.scales.y.display  = vis.cost;
     chart.options.scales.y2.display = vis.kwh  || vis.hkwh;
