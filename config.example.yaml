@@ -1,0 +1,25 @@
+# Config template — copy to config.yaml and fill in your values
+
+db:
+  host: localhost
+  name: energie
+  user: energie
+  password: your_password
+smtp:
+  host: smtp.world4you.com
+  port: 587
+  user: catchall@jardyx.com
+  password: your_password
+  from: energie@jardyx.com
+  from_name: Energie
+slack:
+  bot_token: your_bot_token
+  channel_id: C0ARC5TDWEL
+app:
+  base_url: http://localhost/energie.test
+hofer:
+  username: fu.armin@gmail.com
+  password: your_password
+  meter_id: AT0010000000000000001000012891962
+wienenergie:
+  meter_id: AT0010000000000000001000012891962
