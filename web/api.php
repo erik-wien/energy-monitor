@@ -121,11 +121,12 @@ if ($type === 'daily') {
     $week = (int)($_GET['week'] ?? date('W'));
     $stmt = $pdo->prepare(
         "SELECT agg.label, agg.raw_date, agg.consumed_kwh, agg.cost_brutto, agg.avg_spot_ct,
-                agg.min_spot_ct, agg.max_spot_ct, " . TARIFF_COLS . "
+                agg.min_spot_ct, agg.max_spot_ct, agg.epex_wgt, " . TARIFF_COLS . "
          FROM (
              SELECT DATE_FORMAT(ds.day, '%d.%m') AS label, DATE(ds.day) AS raw_date,
                     ds.consumed_kwh, ds.cost_brutto, ds.avg_spot_ct,
-                    MIN(r.spot_ct) AS min_spot_ct, MAX(r.spot_ct) AS max_spot_ct
+                    MIN(r.spot_ct) AS min_spot_ct, MAX(r.spot_ct) AS max_spot_ct,
+                    SUM(r.spot_ct * r.consumed_kwh) / NULLIF(SUM(r.consumed_kwh), 0) AS epex_wgt
              FROM daily_summary ds
              LEFT JOIN readings r ON DATE(r.ts) = ds.day
              WHERE YEAR(ds.day) = ? AND WEEK(ds.day, 3) = ?
@@ -182,6 +183,7 @@ if ($type === 'daily') {
         'maxCost'           => $max_daily_cost,
         'maxKwh'            => $max_daily_kwh,
         'epex'              => $epex,
+        'epex_wgt'          => array_map(fn($r) => $r['epex_wgt'] !== null ? (float)$r['epex_wgt'] : null, $rows),
         'aufschlag'         => $aufschlag,
         'abgaben'           => $abgaben,
         'gebrauchsabgabe'   => $gba,
@@ -199,11 +201,12 @@ if ($type === 'daily') {
     if ($month < 1) { $month = 12; $year--; }
     $stmt = $pdo->prepare(
         "SELECT agg.label, agg.raw_date, agg.consumed_kwh, agg.cost_brutto, agg.avg_spot_ct,
-                agg.min_spot_ct, agg.max_spot_ct, " . TARIFF_COLS . "
+                agg.min_spot_ct, agg.max_spot_ct, agg.epex_wgt, " . TARIFF_COLS . "
          FROM (
              SELECT DATE_FORMAT(ds.day, '%d.%m') AS label, DATE(ds.day) AS raw_date,
                     ds.consumed_kwh, ds.cost_brutto, ds.avg_spot_ct,
-                    MIN(r.spot_ct) AS min_spot_ct, MAX(r.spot_ct) AS max_spot_ct
+                    MIN(r.spot_ct) AS min_spot_ct, MAX(r.spot_ct) AS max_spot_ct,
+                    SUM(r.spot_ct * r.consumed_kwh) / NULLIF(SUM(r.consumed_kwh), 0) AS epex_wgt
              FROM daily_summary ds
              LEFT JOIN readings r ON DATE(r.ts) = ds.day
              WHERE YEAR(ds.day) = ? AND MONTH(ds.day) = ?
@@ -259,6 +262,7 @@ if ($type === 'daily') {
         'maxCost'           => $max_daily_cost,
         'maxKwh'            => $max_daily_kwh,
         'epex'              => $epex,
+        'epex_wgt'          => array_map(fn($r) => $r['epex_wgt'] !== null ? (float)$r['epex_wgt'] : null, $rows),
         'aufschlag'         => $aufschlag,
         'abgaben'           => $abgaben,
         'gebrauchsabgabe'   => $gba,
@@ -277,14 +281,15 @@ if ($type === 'daily') {
     $start = date('Y-m-01', strtotime('-12 months', strtotime($end)));
     $stmt  = $pdo->prepare(
         "SELECT agg.month_key, agg.label, agg.consumed_kwh, agg.cost_brutto, agg.avg_spot_ct,
-                " . TARIFF_COLS . "
+                agg.epex_wgt, " . TARIFF_COLS . "
          FROM (
              SELECT DATE_FORMAT(day, '%Y-%m')    AS month_key,
                     MIN(day)                     AS first_day,
                     DATE_FORMAT(MIN(day), '%m/%y') AS label,
                     SUM(consumed_kwh)            AS consumed_kwh,
                     SUM(cost_brutto)             AS cost_brutto,
-                    AVG(avg_spot_ct)             AS avg_spot_ct
+                    AVG(avg_spot_ct)             AS avg_spot_ct,
+                    SUM(avg_spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0) AS epex_wgt
              FROM daily_summary
              WHERE day >= ? AND day < DATE_ADD(?, INTERVAL 1 MONTH)
              GROUP BY month_key
@@ -336,6 +341,7 @@ if ($type === 'daily') {
         'hist_kwh_min'      => $hkwh_min,
         'hist_kwh_max'      => $hkwh_max,
         'epex'              => $epex,
+        'epex_wgt'          => array_map(fn($r) => $r['epex_wgt'] !== null ? (float)$r['epex_wgt'] : null, $rows),
         'aufschlag'         => $aufschlag,
         'abgaben'           => $abgaben,
         'gebrauchsabgabe'   => $gba,
@@ -353,6 +359,11 @@ if ($type === 'daily') {
         echo json_encode(['error' => 'Method not allowed']);
         exit;
     }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Invalid CSRF token']);
+        exit;
+    }
     $root    = realpath(dirname(__DIR__));
     $scrapes = $root . '/scrapes';
     $files   = array_merge(
@@ -360,20 +371,118 @@ if ($type === 'daily') {
         glob($scrapes . '/*.xlsx') ?: []
     );
     if (empty($files)) {
-        echo json_encode(['ok' => true, 'count' => 0]);
+        echo json_encode(['ok' => true, 'count' => 0, 'rows' => 0]);
         exit;
     }
     $script = $root . '/energie.py';
-    $desc   = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $proc   = proc_open(['python3', $script, 'import-csv'], $desc, $pipes, $root);
-    $stdout = $proc ? stream_get_contents($pipes[1]) : '';
-    if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
-    $code   = $proc ? proc_close($proc) : 1;
+    $log    = '';
+    $ok     = true;
+    $rows   = 0;
+    foreach ($files as $file) {
+        $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $config_path, 'import-csv', $file], $desc, $pipes, $root);
+        $out  = $proc ? stream_get_contents($pipes[1]) : '';
+        $err  = $proc ? stream_get_contents($pipes[2]) : '';
+        if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
+        $code = $proc ? proc_close($proc) : 1;
+        $log .= $out . ($err ? "\nSTDERR: $err" : '');
+        if ($code !== 0) { $ok = false; }
+        if (preg_match('/Imported (\d+) consumption rows/', $out, $m)) {
+            $rows += (int) $m[1];
+        }
+    }
+    $count = count($files);
+    if ($ok) {
+        appendLog($con, 'import', "Import OK: {$count} file(s), {$rows} row(s) imported.");
+    } else {
+        appendLog($con, 'import', "Import FAILED: {$count} file(s). " . mb_substr(trim($log), 0, 400));
+    }
     echo json_encode([
-        'ok'    => $code === 0,
-        'count' => count($files),
-        'log'   => $stdout,
+        'ok'    => $ok,
+        'count' => $count,
+        'rows'  => $rows,
+        'log'   => $log,
     ]);
+
+} elseif ($type === 'upload-csv') {
+    // Admin-only CSV upload into scrapes/ for manual import
+    if (($_SESSION['rights'] ?? '') !== 'Admin') {
+        http_response_code(403);
+        echo json_encode(['error' => 'Forbidden']);
+        exit;
+    }
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['error' => 'Method not allowed']);
+        exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Invalid CSRF token']);
+        exit;
+    }
+
+    $f = $_FILES['file'] ?? null;
+    if (!$f || $f['error'] !== UPLOAD_ERR_OK) {
+        $codes = [1=>'too large (ini)',2=>'too large (form)',3=>'partial',4=>'no file',6=>'no tmp',7=>'write fail',8=>'extension blocked'];
+        $msg = $codes[$f['error'] ?? 4] ?? 'unknown error ' . ($f['error'] ?? '?');
+        http_response_code(400);
+        echo json_encode(['error' => "Upload error: {$msg}"]);
+        exit;
+    }
+
+    // Size: max 10 MB
+    if ($f['size'] > 10 * 1024 * 1024) {
+        http_response_code(413);
+        echo json_encode(['error' => 'File too large (max 10 MB)']);
+        exit;
+    }
+
+    // Extension: only .csv
+    $origName = $f['name'];
+    if (strtolower(pathinfo($origName, PATHINFO_EXTENSION)) !== 'csv') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Only .csv files are accepted']);
+        exit;
+    }
+
+    // Content check: no null bytes, no PHP open tags
+    $head = file_get_contents($f['tmp_name'], false, null, 0, 512);
+    if ($head === false || str_contains($head, "\x00")) {
+        http_response_code(400);
+        echo json_encode(['error' => 'File appears to be binary, not CSV']);
+        exit;
+    }
+    if (str_contains(strtolower($head), '<?')) {
+        http_response_code(400);
+        echo json_encode(['error' => 'File content rejected (forbidden characters)']);
+        exit;
+    }
+
+    // Sanitize filename: keep only safe characters, prevent path traversal
+    $safeName = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($origName));
+    if ($safeName === '' || $safeName[0] === '.') {
+        $safeName = 'upload_' . $safeName;
+    }
+
+    $root    = realpath(dirname(__DIR__));
+    $scrapes = $root . '/scrapes';
+    $dest    = $scrapes . '/' . $safeName;
+
+    if (file_exists($dest)) {
+        http_response_code(409);
+        echo json_encode(['error' => "A file named '{$safeName}' already exists in scrapes/"]);
+        exit;
+    }
+
+    if (!move_uploaded_file($f['tmp_name'], $dest)) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to save file']);
+        exit;
+    }
+
+    appendLog($con, 'import', "CSV uploaded: {$safeName} (" . number_format($f['size']) . " bytes)");
+    echo json_encode(['ok' => true, 'filename' => $safeName]);
 
 } elseif ($type === 'set-theme') {
     $theme = $_POST['theme'] ?? '';

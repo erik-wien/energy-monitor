@@ -21,23 +21,28 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.ini")
 ARCHIV_DIR  = os.path.join(os.path.dirname(__file__), "_Archiv")
 
 
-def load_config():
+def load_config(path=None):
+    resolved = path or CONFIG_PATH
     cfg = configparser.ConfigParser()
-    if not cfg.read(CONFIG_PATH):
-        sys.exit(f"❌ config.ini not found at {CONFIG_PATH}")
+    if not cfg.read(resolved):
+        sys.exit(f"❌ Config not found at {resolved}")
     return cfg
 
 
 # ── DB ───────────────────────────────────────────────────────────────────────
 
 def get_db(cfg):
-    return mysql.connector.connect(
-        host=cfg["db"]["host"],
+    kwargs = dict(
         user=cfg["db"]["user"],
         password=cfg["db"]["password"],
         database=cfg["db"]["database"],
         charset="utf8mb4",
     )
+    if cfg["db"].get("socket"):
+        kwargs["unix_socket"] = cfg["db"]["socket"]
+    else:
+        kwargs["host"] = cfg["db"]["host"]
+    return mysql.connector.connect(**kwargs)
 
 
 def get_tariff(conn, ts: datetime) -> dict:
@@ -287,8 +292,8 @@ def import_csv(cfg, filepath: str):
         with open(filepath, newline="", encoding="utf-8-sig") as f:
             rows = parse_consumption_csv(f)
     if not rows:
-        print("⚠ No rows parsed from CSV.")
-        return
+        print("⚠ No rows parsed — check encoding, date format, or column layout.", file=sys.stderr)
+        sys.exit(1)
     conn = get_db(cfg)
     try:
         n = _compute_and_upsert_consumption(conn, rows)
@@ -471,6 +476,8 @@ class SlackNotifier:
 
 def main():
     parser = argparse.ArgumentParser(description="Energie pipeline")
+    parser.add_argument("--config", metavar="PATH", default=None,
+                        help="Config file path (default: config.ini next to this script)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("fetch-prices")
@@ -487,7 +494,7 @@ def main():
     sub.add_parser("notify")
 
     args = parser.parse_args()
-    cfg  = load_config()
+    cfg  = load_config(args.config)
 
     if args.cmd == "fetch-prices":
         fetch_prices(cfg, args.year, args.month)
