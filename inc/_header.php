@@ -81,6 +81,24 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
         </div>
     </div>
 </header>
+<?php if ($_import_count > 0): ?>
+<dialog id="import-dialog">
+    <h3>Import-Vorschau</h3>
+    <div class="import-counts">
+        <span class="label">Datensätze gefunden</span>
+        <span class="value" id="imp-total">…</span>
+        <span class="label">Bereits importiert</span>
+        <span class="value exists" id="imp-existing">…</span>
+        <span class="label">Neu</span>
+        <span class="value new" id="imp-new">…</span>
+    </div>
+    <div class="import-dialog-btns">
+        <button class="btn" id="imp-cancel"
+            style="background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-text)">Abbrechen</button>
+        <button class="btn btn-primary" id="imp-confirm">Importieren</button>
+    </div>
+</dialog>
+<?php endif; ?>
 <script nonce="<?= $_cspNonce ?>">
 (function() {
     const menu      = document.querySelector('.user-menu');
@@ -112,28 +130,66 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
         } catch (_) {}
     }
 
-    // Import trigger
-    const importBtn = document.getElementById('import-trigger');
-    if (importBtn) {
-        importBtn.addEventListener('click', e => {
-            e.stopPropagation();
-            importBtn.textContent = 'Importiere\u2026';
-            importBtn.disabled = true;
+    // Import trigger — 2-step: preview → dialog → import
+    const importBtn    = document.getElementById('import-trigger');
+    const importDialog = document.getElementById('import-dialog');
+    if (importBtn && importDialog) {
+        const impTotal    = document.getElementById('imp-total');
+        const impExisting = document.getElementById('imp-existing');
+        const impNew      = document.getElementById('imp-new');
+        const impCancel   = document.getElementById('imp-cancel');
+        const impConfirm  = document.getElementById('imp-confirm');
+        const importLabel = 'Importieren (<?= $_import_count ?>)';
+
+        function _runImport() {
+            impConfirm.disabled    = true;
+            impConfirm.textContent = 'Importiere\u2026';
             fetch(apiBase + '/api.php?type=trigger-import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'csrf_token=' + encodeURIComponent(csrfToken),
             })
                 .then(r => r.json())
+                .then(d => { importDialog.close(); sessionStorage.setItem('importResult', JSON.stringify(d)); location.reload(); })
+                .catch(() => { importDialog.close(); sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: 'Netzwerkfehler' })); location.reload(); });
+        }
+
+        importBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            importBtn.textContent = 'Lade Vorschau\u2026';
+            importBtn.disabled    = true;
+            fetch(apiBase + '/api.php?type=preview-import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'csrf_token=' + encodeURIComponent(csrfToken),
+            })
+                .then(r => r.json())
                 .then(d => {
-                    sessionStorage.setItem('importResult', JSON.stringify(d));
-                    location.reload();
+                    importBtn.textContent = importLabel;
+                    importBtn.disabled    = false;
+                    if (!d.ok) {
+                        sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: d.error || 'Vorschau fehlgeschlagen' }));
+                        location.reload();
+                        return;
+                    }
+                    impTotal.textContent    = d.total;
+                    impExisting.textContent = d.existing;
+                    impNew.textContent      = d.new;
+                    impConfirm.disabled     = false;
+                    impConfirm.textContent  = 'Importieren';
+                    importDialog.showModal();
                 })
                 .catch(() => {
-                    sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: 'Netzwerkfehler' }));
+                    importBtn.textContent = importLabel;
+                    importBtn.disabled    = false;
+                    sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: 'Netzwerkfehler bei Vorschau' }));
                     location.reload();
                 });
         });
+
+        impCancel.addEventListener('click', () => importDialog.close());
+        impConfirm.addEventListener('click', _runImport);
+        importDialog.addEventListener('click', e => { if (e.target === importDialog) importDialog.close(); });
     }
 
     // Admin CSV upload
