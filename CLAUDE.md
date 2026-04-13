@@ -78,6 +78,48 @@ Only external dependency: `requests` (used in script 2). All other imports are s
 
 PHP app served at `/energie/`. All pages are login-gated.
 
+### Local development
+
+- **Dev** — `http://localhost/energie.test` serves `web/` **directly from the Git repo** (no deploy step needed).
+- **Production** — `http://localhost/energie` serves `/Library/WebServer/Documents/energie/web/`. Run `deploy.sh` to sync.
+- Config: `/opt/homebrew/etc/energie-config.ini` (prod) and `/opt/homebrew/etc/energie-config-dev.ini` (dev, detected via `$_SERVER['SCRIPT_NAME']` in `inc/db.php`).
+
+### Data import pipeline
+
+Raw quarter-hourly CSV files from the grid operator (`QuarterHourValues-*.csv`) go into `scrapes/`. The web UI (admin dropdown → "Importieren") triggers `energie.py import-csv <file>` via `proc_open`. The script writes into the `readings` table.
+
+- `energie.py` is the authoritative import script. It normalises German date/decimal format, looks up spot prices, applies the pricing formula, and upserts rows.
+- Admin users can also upload CSVs directly via the dropdown ("CSV hochladen") when `scrapes/` is empty.
+- `web/api.php?type=preview-import` (POST + CSRF) is the preview step: parses timestamps from CSV without running energie.py, returns `{total, existing, new, files}`.
+- `web/api.php?type=trigger-import` (POST + CSRF) actually runs energie.py and logs the result to `auth_log`.
+
+**PHP 8.5 caveat:** Always pass explicit `$escape` to `str_getcsv()`: `str_getcsv($line, ';', '"', '')`. Without it, PHP 8.5 emits a deprecation notice per call, which corrupts JSON API responses when `display_errors = On`.
+
+### DB tables (PDO `$pdo`)
+
+| Table | Key columns |
+|-------|------------|
+| `readings` | `ts` DATETIME (PK), `consumed_kwh`, `cost_brutto`, `spot_ct` |
+| `daily_summary` | `day` DATE (PK), `consumed_kwh`, `cost_brutto`, `avg_spot_ct` |
+| `tariff_config` | `valid_from` DATE (PK) + all tariff parameters |
+
+### `api.php` routing
+
+All chart data and import actions go through `web/api.php?type=<type>`:
+
+| type | method | description |
+|------|--------|-------------|
+| `daily` | GET | 15-min slot data for one day |
+| `weekly` | GET | daily aggregates for one ISO week |
+| `monthly` | GET | daily aggregates for one month |
+| `yearly` | GET | monthly aggregates for a 12-month window |
+| `preview-import` | POST+CSRF | parse scrapes/ timestamps, return counts |
+| `trigger-import` | POST+CSRF | run energie.py on scrapes/, log result |
+| `upload-csv` | POST+CSRF | admin: move uploaded file into scrapes/ |
+| `set-theme` | POST | save theme preference to auth_accounts |
+
+The four chart types all compute the same `invoice_breakdown()` data (per-component cost split) and return per-axis maxima for consistent Y-scale across views.
+
 ### CSS Architecture
 
 Energie uses a shared CSS library (`~/Git/css`, symlinked at `web/styles/shared/`) plus project-specific files:
