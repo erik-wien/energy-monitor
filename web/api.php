@@ -11,6 +11,41 @@ header('Content-Type: application/json');
 
 $type = $_GET['type'] ?? '';
 
+/**
+ * Parse timestamp strings from a semicolon-delimited Energie CSV.
+ * Handles UTF-8 BOM, DD.MM.YYYY or DD.MM.YY date format, HH:MM or HH:MM:SS time.
+ * Returns array of 'YYYY-MM-DDTHH:MM:SS' strings (not yet DB-formatted).
+ */
+function _parse_energie_csv_timestamps(string $path): array {
+    $handle = fopen($path, 'r');
+    if (!$handle) return [];
+    $first   = ltrim((string) fgets($handle), "\xEF\xBB\xBF");  // strip BOM
+    $headers = array_map('trim', str_getcsv(trim($first), ';', '"', ''));
+    $dIdx = array_search('Datum', $headers, true);
+    $vIdx = array_search('Zeit von', $headers, true);
+    if ($vIdx === false) $vIdx = array_search('von', $headers, true);
+    $kIdx = null;
+    foreach ($headers as $i => $h) {
+        if (str_contains($h, 'Verbrauch') || str_contains($h, 'kWh')) { $kIdx = $i; break; }
+    }
+    if ($dIdx === false || $vIdx === false || $kIdx === null) { fclose($handle); return []; }
+    $timestamps = [];
+    while (($line = fgets($handle)) !== false) {
+        $cols  = str_getcsv(trim($line), ';', '"', '');
+        $datum = trim($cols[$dIdx] ?? '');
+        $von   = trim($cols[$vIdx] ?? '');
+        $kwh   = trim($cols[$kIdx] ?? '');
+        if (!$datum || !$von || !$kwh) continue;
+        $parts = explode('.', $datum);
+        if (count($parts) !== 3) continue;
+        $year = strlen($parts[2]) === 2 ? '20' . $parts[2] : $parts[2];
+        if (substr_count($von, ':') === 1) $von .= ':00';
+        $timestamps[] = sprintf('%s-%02d-%02dT%s', $year, (int)$parts[1], (int)$parts[0], $von);
+    }
+    fclose($handle);
+    return $timestamps;
+}
+
 // Global Y-axis maxima for consistent scale across all charts
 $max_daily_kwh  = (float)$pdo->query("SELECT MAX(consumed_kwh) FROM daily_summary")->fetchColumn();
 $max_daily_cost = (float)$pdo->query("SELECT MAX(cost_brutto)  FROM daily_summary")->fetchColumn();
@@ -351,6 +386,47 @@ if ($type === 'daily') {
         'renewable_fee_prop'=> $rfp,
         'period_start'      => $start,
         'period_end'        => date('Y-m-t', strtotime($end)),
+    ]);
+
+} elseif ($type === 'preview-import') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+    }
+    $root    = realpath(dirname(__DIR__));
+    $scrapes = $root . '/scrapes';
+    $files   = array_merge(
+        glob($scrapes . '/*.csv')  ?: [],
+        glob($scrapes . '/*.xlsx') ?: []
+    );
+    if (empty($files)) {
+        echo json_encode(['ok' => true, 'total' => 0, 'existing' => 0, 'new' => 0, 'files' => 0]);
+        exit;
+    }
+    $timestamps = [];
+    foreach ($files as $file) {
+        $ts = strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'csv'
+            ? _parse_energie_csv_timestamps($file)
+            : [];                          // XLSX: preview not implemented; import will validate
+        $timestamps = array_merge($timestamps, $ts);
+    }
+    $timestamps = array_values(array_unique($timestamps));
+    $total = count($timestamps);
+    $existing = 0;
+    if ($total > 0) {
+        $ph   = implode(',', array_fill(0, $total, '?'));
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM readings WHERE ts IN ($ph)");
+        $stmt->execute($timestamps);
+        $existing = (int) $stmt->fetchColumn();
+    }
+    echo json_encode([
+        'ok'       => true,
+        'total'    => $total,
+        'existing' => $existing,
+        'new'      => $total - $existing,
+        'files'    => count($files),
     ]);
 
 } elseif ($type === 'trigger-import') {
