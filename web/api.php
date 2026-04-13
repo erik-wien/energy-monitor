@@ -450,10 +450,12 @@ if ($type === 'daily') {
         echo json_encode(['ok' => true, 'count' => 0, 'rows' => 0]);
         exit;
     }
-    $script = $root . '/energie.py';
-    $log    = '';
-    $ok     = true;
-    $rows   = 0;
+    $script   = $root . '/energie.py';
+    $log      = '';
+    $ok       = true;
+    $imported = 0;
+    $existing = 0;
+    $total    = 0;
     foreach ($files as $file) {
         $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $config_path, 'import-csv', $file], $desc, $pipes, $root);
@@ -463,21 +465,26 @@ if ($type === 'daily') {
         $code = $proc ? proc_close($proc) : 1;
         $log .= $out . ($err ? "\nSTDERR: $err" : '');
         if ($code !== 0) { $ok = false; }
-        if (preg_match('/Imported (\d+) consumption rows/', $out, $m)) {
-            $rows += (int) $m[1];
+        // "✅ Imported N new, M existing, T total consumption rows"
+        if (preg_match('/Imported (\d+) new, (\d+) existing, (\d+) total/', $out, $m)) {
+            $imported += (int) $m[1];
+            $existing += (int) $m[2];
+            $total    += (int) $m[3];
         }
     }
     $count = count($files);
     if ($ok) {
-        appendLog($con, 'import', "Import OK: {$count} file(s), {$rows} row(s) imported.");
+        appendLog($con, 'import', "Import OK: {$count} file(s), {$imported} new, {$existing} existing, {$total} total.");
     } else {
         appendLog($con, 'import', "Import FAILED: {$count} file(s). " . mb_substr(trim($log), 0, 400));
     }
     echo json_encode([
-        'ok'    => $ok,
-        'count' => $count,
-        'rows'  => $rows,
-        'log'   => $log,
+        'ok'       => $ok,
+        'count'    => $count,
+        'imported' => $imported,
+        'existing' => $existing,
+        'total'    => $total,
+        'log'      => $log,
     ]);
 
 } elseif ($type === 'upload-csv') {

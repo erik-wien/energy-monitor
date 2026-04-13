@@ -123,7 +123,7 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
             _el.className = 'alert ' + (_r.ok ? 'alert-success' : 'alert-danger');
             _el.style.cssText = 'margin:0.75rem 1.5rem;';
             _el.textContent = _r.ok
-                ? `Import abgeschlossen: ${_r.rows} Datensätze aus ${_r.count} Datei(en) importiert.`
+                ? `Import abgeschlossen: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
                 : `Import fehlgeschlagen: ${(_r.log || _r.error || 'Unbekannter Fehler').trim().slice(0, 200)}`;
             document.querySelector('.app-header')?.insertAdjacentElement('afterend', _el);
             setTimeout(() => _el.remove(), 8000);

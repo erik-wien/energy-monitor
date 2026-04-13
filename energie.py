@@ -228,14 +228,15 @@ def parse_consumption_csv(fileobj) -> list[dict]:
     return rows
 
 
-def _compute_and_upsert_consumption(conn, rows: list[dict]) -> int:
+def _compute_and_upsert_consumption(conn, rows: list[dict]) -> tuple[int, int]:
     """
     For each consumption row, look up its spot_ct from readings,
     compute cost_brutto using the applicable tariff, and upsert.
-    Returns the number of rows processed.
+    Returns (inserted, total) where inserted counts only new rows
+    (rowcount == 1 means INSERT; rowcount 0 or 2 means existing row updated/unchanged).
     """
     cur = conn.cursor(dictionary=True)
-    updated = 0
+    inserted = 0
     for row in rows:
         ts_dt = datetime.fromisoformat(row["ts"])
         cur.execute("SELECT spot_ct FROM readings WHERE ts = %s", (row["ts"],))
@@ -255,10 +256,11 @@ def _compute_and_upsert_consumption(conn, rows: list[dict]) -> int:
                    cost_brutto  = VALUES(cost_brutto)""",
             (row["ts"], row["consumed_kwh"], spot_ct, cost),
         )
-        updated += 1
+        if cur.rowcount == 1:
+            inserted += 1
     conn.commit()
     cur.close()
-    return updated
+    return inserted, len(rows)
 
 
 def parse_consumption_xlsx(filepath: str) -> list[dict]:
@@ -296,11 +298,11 @@ def import_csv(cfg, filepath: str):
         sys.exit(1)
     conn = get_db(cfg)
     try:
-        n = _compute_and_upsert_consumption(conn, rows)
+        inserted, total = _compute_and_upsert_consumption(conn, rows)
         rebuild_daily_summary(conn)
     finally:
         conn.close()
-    print(f"✅ Imported {n} consumption rows")
+    print(f"✅ Imported {inserted} new, {total - inserted} existing, {total} total consumption rows")
 
     dest = os.path.join(ARCHIV_DIR, os.path.basename(filepath))
     shutil.move(filepath, dest)
