@@ -13,6 +13,28 @@ if (!csrf_verify()) {
 
 $result = auth_login($con, $_POST['login-username'], $_POST['login-password']);
 
+if (!empty($result['ok']) && !empty($result['totp_required'])) {
+    // Persist rememberName cookie intent for the post-TOTP redirect.
+    if (!empty($_POST['rememberName'])) {
+        setcookie('energie_username', $_POST['login-username'], [
+            'expires'  => time() + 10 * 24 * 60 * 60,
+            'path'     => '/',
+            'httponly' => true,
+            'secure'   => true,
+            'samesite' => 'Lax',
+        ]);
+    } else {
+        setcookie('energie_username', '', [
+            'expires'  => time() - 3600,
+            'path'     => '/',
+            'httponly' => true,
+            'secure'   => true,
+            'samesite' => 'Lax',
+        ]);
+    }
+    header('Location: totp_verify.php'); exit;
+}
+
 if ($result['ok']) {
     if (!empty($_POST['rememberName'])) {
         setcookie('energie_username', $_POST['login-username'], [
