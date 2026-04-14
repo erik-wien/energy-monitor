@@ -57,6 +57,8 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
     <title><?= htmlspecialchars($period_label) ?> · Energie</title>
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/img/favicon.ico">
@@ -116,6 +118,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
 
 <script nonce="<?= $_cspNonce ?>">
 const periodLabel = <?= json_encode($period_label) ?>;
+const base        = <?= json_encode($base) ?>;
 
 let _printHTML = null;
 let _blobUrl   = null;
@@ -184,6 +187,16 @@ fetch(<?= json_encode($api_url) ?>)
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
+        onClick: (event, elements) => {
+          if (!elements.length) return;
+          const mo = data.months?.[elements[0].index]; // "YYYY-MM"
+          if (!mo) return;
+          const [y, m] = mo.split('-');
+          window.location = base + '/monthly.php?year=' + y + '&month=' + parseInt(m, 10);
+        },
+        onHover: (event, elements) => {
+          event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+        },
         plugins: {
           legend: {
             onClick: () => {},
@@ -234,7 +247,7 @@ function buildPrintContent(data, DE_MO) {
                + ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes());
   const period = esc(periodLabel) + ' (' + fmtDE(data.period_start) + ' \u2013 ' + fmtDE(data.period_end) + ')';
 
-  let sumKwh = 0, sumEpxW = 0, sumAuf = 0, sumAbg = 0, sumGba = 0, sumMwst = 0, sumGes = 0;
+  let sumKwh = 0, sumEpxW = 0, sumNetto = 0, sumEpx = 0, sumCount = 0, sumAuf = 0, sumAbg = 0, sumGba = 0, sumMwst = 0, sumGes = 0;
   const bodyParts = [];
 
   data.months.forEach((mo, i) => {
@@ -242,17 +255,20 @@ function buildPrintContent(data, DE_MO) {
     const lbl  = DE_MO[parseInt(m, 10) - 1] + ' ' + y;
     const kwh  = data.consumption?.[i]     ?? 0;
     const epx  = data.epex?.[i]            ?? 0;
+    const epxW = data.epex_wgt?.[i]        ?? epx;
     const auf  = data.aufschlag?.[i]       ?? 0;
     const abg  = data.abgaben?.[i]         ?? 0;
     const gba  = data.gebrauchsabgabe?.[i] ?? 0;
     const mwst = data.mwst_tax?.[i]        ?? 0;
     const ges  = data.gesamt_variable?.[i] ?? data.cost[i] ?? 0;
-    sumKwh += kwh; sumEpxW += kwh * epx; sumAuf += auf; sumAbg += abg; sumGba += gba; sumMwst += mwst; sumGes += ges;
+    sumKwh += kwh; sumEpxW += kwh * epxW; sumNetto += kwh * epx / 100; sumEpx += epx; sumCount++; sumAuf += auf; sumAbg += abg; sumGba += gba; sumMwst += mwst; sumGes += ges;
     bodyParts.push(
       '<tr>'
       + '<td>' + esc(lbl) + '</td>'
       + '<td>' + fmtKwh(kwh) + '</td>'
       + '<td>' + fmtCt(epx)  + '</td>'
+      + '<td>' + fmtCt(epxW) + '</td>'
+      + '<td>' + fmt2(kwh * epx / 100) + '</td>'
       + '<td>' + fmt2(auf)  + '</td>'
       + '<td>' + fmt2(abg)  + '</td>'
       + '<td>' + fmt2(gba)  + '</td>'
@@ -265,13 +281,15 @@ function buildPrintContent(data, DE_MO) {
   const mfp   = data.meter_fee_prop    ?? 0;
   const rfp   = data.renewable_fee_prop ?? 0;
   const grand = sumGes + mfp + rfp;
-  const blank  = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
+  const blank  = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
 
   const footParts = [
     '<tr class="sub">'
       + '<td class="lbl-sub">Zwischensumme</td>'
       + '<td>' + fmtKwh(sumKwh) + '</td>'
-      + '<td>' + fmtCt(sumKwh > 0 ? sumEpxW / sumKwh : 0) + '</td>'
+      + '<td>' + fmtCt(sumCount > 0 ? sumEpx  / sumCount : 0) + '</td>'
+      + '<td>' + fmtCt(sumKwh  > 0 ? sumEpxW / sumKwh  : 0) + '</td>'
+      + '<td>' + fmt2(sumNetto) + '</td>'
       + '<td>' + fmt2(sumAuf)  + '</td>'
       + '<td>' + fmt2(sumAbg)  + '</td>'
       + '<td>' + fmt2(sumGba)  + '</td>'
@@ -289,7 +307,7 @@ function buildPrintContent(data, DE_MO) {
   );
   footParts.push(
     '<tr class="grand">'
-      + '<th>Gesamtsumme</th><th></th><th></th><th></th><th></th><th></th><th></th>'
+      + '<th>Gesamtsumme</th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>'
       + '<th' + (grand < 0 ? ' class="neg"' : '') + '>' + fmt2(grand) + '</th>'
       + '</tr>'
   );
@@ -325,7 +343,7 @@ function buildPrintContent(data, DE_MO) {
     + '<table>'
     + '<thead><tr>'
     + '<th>Monat</th>'
-    + '<th>Verbrauch</th><th>EPEX</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Gesamt</th>'
+    + '<th>Verbrauch</th><th>EPEX \u00f8</th><th>\u00d8 gew.</th><th>Netto Preis</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>'
     + '</tr></thead>'
     + '<tbody>' + bodyParts.join('') + '</tbody>'
     + '<tfoot>' + footParts.join('') + '</tfoot>'
@@ -386,6 +404,25 @@ document.getElementById('print-btn').addEventListener('click', () => {
     });
   });
 })();
+
+// Swipe navigation
+(function() {
+  const prevUrl = <?= json_encode($prev_url) ?>;
+  const nextUrl = <?= json_encode($next_url) ?>;
+  let x0 = 0, y0 = 0;
+  document.addEventListener('touchstart', e => {
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0 && nextUrl) window.location = nextUrl;
+    if (dx > 0 && prevUrl) window.location = prevUrl;
+  }, { passive: true });
+})();
 </script>
+<?php echo '<footer class="app-footer"><span>&copy; ' . date('Y') . ' Erik R. Accart-Huemer</span> <a href="https://www.eriks.cloud/#impressum" target="_blank" rel="noopener">Impressum</a> <span>' . APP_NAME . ' ' . APP_VERSION . '.' . APP_BUILD . ' &middot; ' . APP_ENV . '</span></footer>'; ?>
 </body>
 </html>

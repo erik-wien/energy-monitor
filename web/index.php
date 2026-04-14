@@ -46,6 +46,8 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
     <title>Energie</title>
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/img/favicon.ico">
@@ -93,5 +95,6 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 
     </div>
 </main>
+<?php echo '<footer class="app-footer"><span>&copy; ' . date('Y') . ' Erik R. Accart-Huemer</span> <a href="https://www.eriks.cloud/#impressum" target="_blank" rel="noopener">Impressum</a> <span>' . APP_NAME . ' ' . APP_VERSION . '.' . APP_BUILD . ' &middot; ' . APP_ENV . '</span></footer>'; ?>
 </body>
 </html>

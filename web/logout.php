@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../inc/initialize.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
-    header('Location: index.php'); exit;
+    header('Location: ./'); exit;
 }
 
 auth_logout($con);

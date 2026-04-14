@@ -23,6 +23,8 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
     <title><?= htmlspecialchars($title) ?> · Energie</title>
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/img/favicon.ico">
@@ -30,6 +32,8 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
     <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/img/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/img/apple-touch-icon.png">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" nonce="<?= $_cspNonce ?>"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+    <link rel="stylesheet" href="<?= $base ?>/styles/flatpickr-overrides.css">
 </head>
 <body>
 <?php require __DIR__ . '/_header.php'; ?>
@@ -38,7 +42,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
         <a href="<?= htmlspecialchars($prev_url) ?>">← <?= htmlspecialchars($prev_label) ?></a>
         <div class="period-nav">
             <span class="period-label"><?= htmlspecialchars($period_label) ?></span>
-            <input type="date" id="date-picker" class="date-input-inline"
+            <input type="text" id="date-picker" class="date-input-inline" readonly
                    value="<?= htmlspecialchars($current_date_iso) ?>">
             <button type="button" id="print-btn" class="print-btn" title="Aufstellung drucken">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -87,6 +91,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
 const isDailyPage   = <?= json_encode($page_type === 'daily') ?>;
 const isWeeklyPage  = <?= json_encode($page_type === 'weekly') ?>;
 const periodLabel   = <?= json_encode($period_label) ?>;
+const base          = <?= json_encode($base) ?>;
 
 let _printHTML = null;
 let _blobUrl   = null;
@@ -170,6 +175,14 @@ fetch(<?= json_encode($api_url) ?>)
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
+        onClick: (event, elements) => {
+          if (isDailyPage || !elements.length) return;
+          const date = data.dates?.[elements[0].index];
+          if (date) window.location = base + '/daily.php?date=' + date;
+        },
+        onHover: (event, elements) => {
+          event.native.target.style.cursor = (!isDailyPage && elements.length) ? 'pointer' : 'default';
+        },
         plugins: {
           legend: {
             onClick: () => {},
@@ -226,44 +239,66 @@ fetch(<?= json_encode($api_url) ?>)
   });
 
 function buildPrintContent(data, DE_DAYS) {
-  const invDp   = isDailyPage ? 4 : 3;
-  const pad2    = n => String(n).padStart(2, '0');
-  const fmtN    = (v, dp) => (v < 0 ? '\u2212' : '') + '\u20ac\u00a0' + Math.abs(v).toFixed(dp).replace('.', ',');
-  const fmtI    = v => fmtN(v, invDp);
-  const fmt2    = v => fmtN(v, 2);
-  const fmtKwh  = v => Math.abs(v).toFixed(invDp).replace('.', ',') + '\u00a0kWh';
-  const fmtCt   = v => Math.abs(v).toFixed(2).replace('.', ',') + '\u00a0ct/kWh';
-  const fmtDE   = iso => iso.slice(8,10) + '.' + iso.slice(5,7) + '.' + iso.slice(0,4);
-  const esc     = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const pad2      = n => String(n).padStart(2, '0');
+  const fmtN      = (v, dp) => (v < 0 ? '\u2212' : '') + '\u20ac\u00a0' + Math.abs(v).toFixed(dp).replace('.', ',');
+  const fmt2      = v => fmtN(v, 2);
+  const fmtKwh    = v => Math.abs(v).toFixed(3).replace('.', ',') + '\u00a0kWh';
+  const fmtCt     = v => Math.abs(v).toFixed(2).replace('.', ',') + '\u00a0ct/kWh';
+  // Cost in ct (for daily rows and zwischensumme)
+  const fmtCtCost = v => (v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(3).replace('.', ',') + '\u00a0ct';
+  const fmtDE     = iso => iso.slice(8,10) + '.' + iso.slice(5,7) + '.' + iso.slice(0,4);
+  const esc       = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   const now = new Date();
   const stand  = pad2(now.getDate()) + '.' + pad2(now.getMonth()+1) + '.' + now.getFullYear()
                + ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes());
   const period = esc(periodLabel) + ' (' + fmtDE(data.period_start) + ' \u2013 ' + fmtDE(data.period_end) + ')';
 
-  let sumKwh = 0, sumEpxW = 0, sumAuf = 0, sumAbg = 0, sumGba = 0, sumMwst = 0, sumGes = 0;
+  let sumKwh = 0, sumEpxW = 0, sumNetto = 0, sumEpx = 0, sumCount = 0, sumAuf = 0, sumAbg = 0, sumGba = 0, sumMwst = 0, sumGes = 0;
   const bodyParts = [];
 
-  const addRow = (lbl, kwh, epx, auf, abg, gba, mwst, ges) => {
-    bodyParts.push(
-      '<tr>'
-      + '<td>' + esc(lbl) + '</td>'
-      + '<td>' + fmtKwh(kwh) + '</td>'
-      + '<td>' + fmtCt(epx)  + '</td>'
-      + '<td>' + fmtI(auf)  + '</td>'
-      + '<td>' + fmtI(abg)  + '</td>'
-      + '<td>' + fmtI(gba)  + '</td>'
-      + '<td>' + fmtI(mwst) + '</td>'
-      + '<td' + (ges < 0 ? ' class="neg"' : '') + '>' + fmtI(ges) + '</td>'
-      + '</tr>'
-    );
-    sumKwh += kwh; sumEpxW += kwh * epx; sumAuf += auf; sumAbg += abg; sumGba += gba; sumMwst += mwst; sumGes += ges;
+  const addRow = (lbl, kwh, epx, epxW, auf, abg, gba, mwst, ges) => {
+    if (isDailyPage) {
+      // Per-slot row: Ø gew. omitted; all cost columns in ct
+      bodyParts.push(
+        '<tr>'
+        + '<td>' + esc(lbl) + '</td>'
+        + '<td>' + fmtKwh(kwh) + '</td>'
+        + '<td>' + fmtCt(epx) + '</td>'
+        + '<td>' + fmtCtCost(kwh * epx) + '</td>'
+        + '<td>' + fmtCtCost(auf * 100) + '</td>'
+        + '<td>' + fmtCtCost(abg * 100) + '</td>'
+        + '<td>' + fmtCtCost(gba * 100) + '</td>'
+        + '<td>' + fmtCtCost(mwst * 100) + '</td>'
+        + '<td' + (ges < 0 ? ' class="neg"' : '') + '>' + fmtCtCost(ges * 100) + '</td>'
+        + '</tr>'
+      );
+    } else {
+      // Per-day row: Ø gew. = consumption-weighted avg; Netto Preis uses arithmetic avg epx
+      // (invoice_breakdown uses avg_spot_ct = epx, so columns sum to Preis Brutto)
+      bodyParts.push(
+        '<tr>'
+        + '<td>' + esc(lbl) + '</td>'
+        + '<td>' + fmtKwh(kwh) + '</td>'
+        + '<td>' + fmtCt(epx) + '</td>'
+        + '<td>' + fmtCt(epxW) + '</td>'
+        + '<td>' + fmt2(kwh * epx / 100) + '</td>'
+        + '<td>' + fmt2(auf) + '</td>'
+        + '<td>' + fmt2(abg) + '</td>'
+        + '<td>' + fmt2(gba) + '</td>'
+        + '<td>' + fmt2(mwst) + '</td>'
+        + '<td' + (ges < 0 ? ' class="neg"' : '') + '>' + fmt2(ges) + '</td>'
+        + '</tr>'
+      );
+    }
+    sumKwh += kwh; sumEpxW += kwh * epxW; sumNetto += kwh * epx / 100; sumEpx += epx; sumCount++; sumAuf += auf; sumAbg += abg; sumGba += gba; sumMwst += mwst; sumGes += ges;
   };
 
   if (isDailyPage) {
     data.labels.forEach((lbl, i) => addRow(
       lbl.substring(0, 5),
       data.consumption?.[i]     ?? 0,
+      data.epex?.[i]            ?? 0,
       data.epex?.[i]            ?? 0,
       data.aufschlag?.[i]       ?? 0,
       data.abgaben?.[i]         ?? 0,
@@ -278,6 +313,7 @@ function buildPrintContent(data, DE_DAYS) {
         DE_DAYS[d.getDay()] + ' ' + iso.slice(8,10) + '.' + iso.slice(5,7) + '.',
         data.consumption?.[i]     ?? 0,
         data.epex?.[i]            ?? 0,
+        data.epex_wgt?.[i]        ?? data.epex?.[i] ?? 0,
         data.aufschlag?.[i]       ?? 0,
         data.abgaben?.[i]         ?? 0,
         data.gebrauchsabgabe?.[i] ?? 0,
@@ -290,34 +326,72 @@ function buildPrintContent(data, DE_DAYS) {
   const mfp   = data.meter_fee_prop    ?? 0;
   const rfp   = data.renewable_fee_prop ?? 0;
   const grand = sumGes + mfp + rfp;
-  const blank  = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
 
-  const footParts = [
-    '<tr class="sub">'
-      + '<td class="lbl-sub">Zwischensumme</td>'
-      + '<td>' + fmtKwh(sumKwh) + '</td>'
-      + '<td>' + fmtCt(sumKwh > 0 ? sumEpxW / sumKwh : 0) + '</td>'
-      + '<td>' + fmt2(sumAuf)  + '</td>'
-      + '<td>' + fmt2(sumAbg)  + '</td>'
-      + '<td>' + fmt2(sumGba)  + '</td>'
-      + '<td>' + fmt2(sumMwst) + '</td>'
-      + '<td' + (sumGes < 0 ? ' class="neg"' : '') + '>' + fmt2(sumGes) + '</td>'
-      + '</tr>',
-  ];
-  if (mfp > 0.00005) footParts.push(
-    '<tr><td class="lbl-fee">+ Z\u00e4hlergebühr (ant.)</td>'
-    + blank.replace(/(<td><\/td>)$/, '<td>' + fmt2(mfp) + '</td>') + '</tr>'
-  );
-  if (rfp > 0.00005) footParts.push(
-    '<tr><td class="lbl-fee">+ Erneuerbaren-Abgabe (ant.)</td>'
-    + blank.replace(/(<td><\/td>)$/, '<td>' + fmt2(rfp) + '</td>') + '</tr>'
-  );
-  footParts.push(
-    '<tr class="grand">'
-      + '<th>Gesamtsumme</th><th></th><th></th><th></th><th></th><th></th><th></th>'
-      + '<th' + (grand < 0 ? ' class="neg"' : '') + '>' + fmt2(grand) + '</th>'
-      + '</tr>'
-  );
+  let footParts, blank, headerCols;
+  if (isDailyPage) {
+    // 9 columns: Zeit, Verbrauch, EPEX ø, Netto Preis, Aufschlag, Abgaben, Steuern, MwSt, Preis Brutto
+    blank = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
+    headerCols = '<th>Verbrauch</th><th>EPEX</th><th>Netto Preis</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>';
+    footParts = [
+      '<tr class="sub">'
+        + '<td class="lbl-sub">Zwischensumme</td>'
+        + '<td>' + fmtKwh(sumKwh) + '</td>'
+        + '<td>' + fmtCt(sumCount > 0 ? sumEpx / sumCount : 0) + '</td>'
+        + '<td>' + fmtCtCost(sumEpxW) + '</td>'
+        + '<td>' + fmtCtCost(sumAuf * 100) + '</td>'
+        + '<td>' + fmtCtCost(sumAbg * 100) + '</td>'
+        + '<td>' + fmtCtCost(sumGba * 100) + '</td>'
+        + '<td>' + fmtCtCost(sumMwst * 100) + '</td>'
+        + '<td' + (sumGes < 0 ? ' class="neg"' : '') + '>' + fmtCtCost(sumGes * 100) + '</td>'
+        + '</tr>',
+    ];
+    if (mfp > 0.00005) footParts.push(
+      '<tr><td class="lbl-fee">+ Z\u00e4hlergebühr (ant.)</td>'
+      + blank.replace(/(<td><\/td>)$/, '<td>' + fmt2(mfp) + '</td>') + '</tr>'
+    );
+    if (rfp > 0.00005) footParts.push(
+      '<tr><td class="lbl-fee">+ Erneuerbaren-Abgabe (ant.)</td>'
+      + blank.replace(/(<td><\/td>)$/, '<td>' + fmt2(rfp) + '</td>') + '</tr>'
+    );
+    footParts.push(
+      '<tr class="grand">'
+        + '<th>Gesamtsumme</th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>'
+        + '<th' + (grand < 0 ? ' class="neg"' : '') + '>' + fmt2(grand) + '</th>'
+        + '</tr>'
+    );
+  } else {
+    // 10 columns: Tag, Verbrauch, EPEX ø, Ø gew., Netto Preis, Aufschlag, Abgaben, Steuern, MwSt, Preis Brutto
+    blank = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
+    headerCols = '<th>Verbrauch</th><th>EPEX \u00f8</th><th>\u00d8 gew.</th><th>Netto Preis</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>';
+    footParts = [
+      '<tr class="sub">'
+        + '<td class="lbl-sub">Zwischensumme</td>'
+        + '<td>' + fmtKwh(sumKwh) + '</td>'
+        + '<td>' + fmtCt(sumCount > 0 ? sumEpx / sumCount : 0) + '</td>'
+        + '<td>' + fmtCt(sumKwh  > 0 ? sumEpxW / sumKwh  : 0) + '</td>'
+        + '<td>' + fmt2(sumNetto) + '</td>'
+        + '<td>' + fmt2(sumAuf) + '</td>'
+        + '<td>' + fmt2(sumAbg) + '</td>'
+        + '<td>' + fmt2(sumGba) + '</td>'
+        + '<td>' + fmt2(sumMwst) + '</td>'
+        + '<td' + (sumGes < 0 ? ' class="neg"' : '') + '>' + fmt2(sumGes) + '</td>'
+        + '</tr>',
+    ];
+    if (mfp > 0.00005) footParts.push(
+      '<tr><td class="lbl-fee">+ Z\u00e4hlergebühr (ant.)</td>'
+      + blank.replace(/(<td><\/td>)$/, '<td>' + fmt2(mfp) + '</td>') + '</tr>'
+    );
+    if (rfp > 0.00005) footParts.push(
+      '<tr><td class="lbl-fee">+ Erneuerbaren-Abgabe (ant.)</td>'
+      + blank.replace(/(<td><\/td>)$/, '<td>' + fmt2(rfp) + '</td>') + '</tr>'
+    );
+    footParts.push(
+      '<tr class="grand">'
+        + '<th>Gesamtsumme</th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>'
+        + '<th' + (grand < 0 ? ' class="neg"' : '') + '>' + fmt2(grand) + '</th>'
+        + '</tr>'
+    );
+  }
 
   return '<!DOCTYPE html>'
     + '<html lang="de"><head><meta charset="UTF-8">'
@@ -350,7 +424,7 @@ function buildPrintContent(data, DE_DAYS) {
     + '<table>'
     + '<thead><tr>'
     + '<th>' + (isDailyPage ? 'Zeit' : 'Tag') + '</th>'
-    + '<th>Verbrauch</th><th>EPEX</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Gesamt</th>'
+    + headerCols
     + '</tr></thead>'
     + '<tbody>' + bodyParts.join('') + '</tbody>'
     + '<tfoot>' + footParts.join('') + '</tfoot>'
@@ -367,26 +441,34 @@ document.getElementById('print-btn').addEventListener('click', () => {
   if (win) win.addEventListener('load', () => { win.focus(); win.print(); });
 });
 
-// Date picker
+// Date picker — Flatpickr
+</script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr" nonce="<?= $_cspNonce ?>"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/de.js" nonce="<?= $_cspNonce ?>"></script>
+<script nonce="<?= $_cspNonce ?>">
 (function() {
   const pageType = <?= json_encode($page_type) ?>;
-  const base     = <?= json_encode($base) ?>;
-  const picker   = document.getElementById('date-picker');
-
-  picker.addEventListener('change', () => {
-    const val = picker.value;
-    if (!val) return;
-    const d = new Date(val + 'T00:00:00');
-    if (pageType === 'daily') {
-      window.location = base + '/daily.php?date=' + val;
-    } else if (pageType === 'weekly') {
-      const tmp = new Date(d);
-      tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
-      const yearStart = new Date(tmp.getFullYear(), 0, 1);
-      const week = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
-      window.location = base + '/weekly.php?year=' + tmp.getFullYear() + '&week=' + week;
-    } else {
-      window.location = base + '/monthly.php?year=' + d.getFullYear() + '&month=' + (d.getMonth() + 1);
+  flatpickr('#date-picker', {
+    locale: 'de',
+    dateFormat: 'Y-m-d',
+    defaultDate: document.getElementById('date-picker').value || null,
+    onChange: ([date]) => {
+      if (!date) return;
+      const val = date.getFullYear() + '-'
+        + String(date.getMonth() + 1).padStart(2, '0') + '-'
+        + String(date.getDate()).padStart(2, '0');
+      const d = date;
+      if (pageType === 'daily') {
+        window.location = base + '/daily.php?date=' + val;
+      } else if (pageType === 'weekly') {
+        const tmp = new Date(d);
+        tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
+        const yearStart = new Date(tmp.getFullYear(), 0, 1);
+        const week = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
+        window.location = base + '/weekly.php?year=' + tmp.getFullYear() + '&week=' + week;
+      } else {
+        window.location = base + '/monthly.php?year=' + d.getFullYear() + '&month=' + (d.getMonth() + 1);
+      }
     }
   });
 })();
@@ -441,6 +523,31 @@ document.getElementById('print-btn').addEventListener('click', () => {
     });
   });
 })();
-</script>
+
+// Swipe navigation
+(function() {
+  const prevUrl = <?= json_encode($prev_url) ?>;
+  const nextUrl = <?= json_encode($next_url) ?>;
+  let x0 = 0, y0 = 0;
+  document.addEventListener('touchstart', e => {
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0 && nextUrl) window.location = nextUrl;
+    if (dx > 0 && prevUrl) window.location = prevUrl;
+  }, { passive: true });
+})();
+</script><?php
+echo '<footer class="app-footer">'
+  . '<span>&copy; ' . date('Y') . ' Erik R. Accart-Huemer</span>'
+  . ' <a href="https://www.eriks.cloud/#impressum" target="_blank" rel="noopener">Impressum</a>'
+  . ' <span>' . APP_NAME . ' ' . APP_VERSION . '.' . APP_BUILD . ' &middot; ' . APP_ENV . '</span>'
+  . '</footer>';
+?>
+
 </body>
 </html>
