@@ -1,7 +1,7 @@
 <?php
 // Expected vars from including file:
 // $base       string  URL prefix (e.g. '/energie.test')
-// $page_type  string  'daily' | 'weekly' | 'monthly' | 'yearly' | 'index' | 'preferences'
+// $page_type  string  'daily' | 'weekly' | 'monthly' | 'yearly' | 'index' | 'preferences' | 'security'
 
 // Count importable files in scrapes/
 $_scrapes_dir  = dirname(__DIR__) . '/scrapes';
@@ -52,9 +52,7 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
             <span class="dropdown-username"><?= $_username ?></span>
             <div class="dropdown-divider"></div>
             <a href="<?= $base ?>/preferences.php">Einstellungen</a>
-            <?php if ($_isAdmin): ?>
-                <a href="<?= $base ?>/admin.php">Admin</a>
-            <?php endif; ?>
+            <a href="<?= $base ?>/security.php">Sicherheit</a>
             <?php if ($_import_count > 0): ?>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger">
