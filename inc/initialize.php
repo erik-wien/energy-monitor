@@ -13,6 +13,10 @@ require_once __DIR__ . '/../vendor/autoload.php';
 $_ini = parse_ini_file('/opt/homebrew/etc/energie-config.ini', true) ?: [];
 
 define('APP_BASE_URL',  rtrim($_ini['app']['base_url']   ?? '', '/'));
+define('APP_NAME',      'Energie');
+define('APP_VERSION',   '1.0');
+define('APP_BUILD',     '2026-04-12');
+define('APP_ENV',       file_exists(__DIR__ . '/../app.prod') ? 'prod' : 'dev');
 define('SMTP_HOST',     $_ini['smtp']['host']             ?? '');
 define('SMTP_PORT',     (int) ($_ini['smtp']['port']      ?? 587));
 define('SMTP_USER',     $_ini['smtp']['user']             ?? '');
@@ -47,4 +51,6 @@ unset($_cfg);
 
 // ── Bootstrap (security headers + session + CSRF) ─────────────────────────────
 
-auth_bootstrap();   // No CDN extras — Energie serves its own assets
+auth_bootstrap([
+    'style-src' => 'https://cdn.jsdelivr.net',  // Flatpickr, Chart.js CDN assets
+]);
