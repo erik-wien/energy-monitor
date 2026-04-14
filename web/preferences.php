@@ -15,6 +15,13 @@ $currentEmail = htmlspecialchars(
 );
 $stmt->close();
 
+// ── Current 2FA state ─────────────────────────────────────────────────────
+$stmt = $con->prepare('SELECT totp_secret FROM auth_accounts WHERE id = ?');
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$has2fa = ($stmt->get_result()->fetch_assoc()['totp_secret'] ?? null) !== null;
+$stmt->close();
+
 $errors = [];
 
 // ── POST handler ──────────────────────────────────────────────────────────────
@@ -181,6 +188,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: preferences.php'); exit;
         }
     }
+
+    // ── Start 2FA setup ───────────────────────────────────────────────────────
+    if ($action === 'totp_start') {
+        $secret = auth_totp_enable($con, $userId);
+        if ($secret !== null) {
+            $_SESSION['totp_setup_secret'] = [
+                'secret' => $secret,
+                'until'  => time() + 300,
+            ];
+        } else {
+            $errors['totp'] = 'Konto nicht gefunden.';
+        }
+        if (empty($errors['totp'])) {
+            header('Location: preferences.php'); exit;
+        }
+    }
+
+    // ── Confirm 2FA setup ─────────────────────────────────────────────────────
+    if ($action === 'totp_confirm') {
+        $setupData = $_SESSION['totp_setup_secret'] ?? null;
+        if ($setupData === null || time() > $setupData['until']) {
+            unset($_SESSION['totp_setup_secret']);
+            $errors['totp'] = 'Sitzung abgelaufen. Bitte erneut starten.';
+        } else {
+            $code = trim($_POST['totp_code'] ?? '');
+            if (auth_totp_confirm($con, $userId, $setupData['secret'], $code)) {
+                unset($_SESSION['totp_setup_secret']);
+                appendLog($con, 'auth', ($_SESSION['username'] ?? '') . ' enabled 2FA.', 'web');
+                addAlert('success', '2FA ist jetzt aktiv.');
+                header('Location: preferences.php'); exit;
+            }
+            $errors['totp'] = 'Code ungültig. Bitte erneut versuchen.';
+        }
+    }
+
+    // ── Disable 2FA ───────────────────────────────────────────────────────────
+    if ($action === 'totp_disable') {
+        auth_totp_disable($con, $userId);
+        unset($_SESSION['totp_setup_secret']);
+        appendLog($con, 'auth', ($_SESSION['username'] ?? '') . ' disabled 2FA.', 'web');
+        addAlert('success', '2FA wurde deaktiviert.');
+        header('Location: preferences.php'); exit;
+    }
+}
+
+// ── Prepare QR code for in-progress 2FA enrollment ────────────────────────────
+$setupSecret = null;
+$setupQrHtml = '';
+$setupData   = $_SESSION['totp_setup_secret'] ?? null;
+if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
+    $setupSecret = $setupData['secret'];
+    $uri         = auth_totp_uri(
+        $setupSecret,
+        ($_SESSION['username'] ?? 'user') . '@' . APP_NAME,
+        APP_NAME
+    );
+    $options     = new \chillerlan\QRCode\QROptions([
+        'outputType'  => 'svg',
+        'imageBase64' => false,
+    ]);
+    $svg         = (new \chillerlan\QRCode\QRCode($options))->render($uri);
+    $setupQrHtml = '<img src="data:image/svg+xml;base64,' . base64_encode($svg)
+                 . '" width="200" height="200" alt="QR Code">';
 }
 ?>
 <!DOCTYPE html>
@@ -312,6 +382,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <button class="btn btn-primary" type="submit">Speichern</button>
                 </form>
+            </div>
+        </div>
+
+        <!-- Zwei-Faktor-Authentifizierung -->
+        <div class="pref-card">
+            <div class="pref-card-hdr">Zwei-Faktor-Authentifizierung</div>
+            <div class="pref-card-body">
+                <?php if (!empty($errors['totp'])): ?>
+                    <div class="alert alert-danger">
+                        <?= htmlspecialchars($errors['totp'], ENT_QUOTES, 'UTF-8') ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($has2fa): ?>
+                    <p class="text-muted" style="margin-bottom:.75rem">
+                        Dein Konto ist mit einem TOTP-Authenticator gesichert.
+                    </p>
+                    <form method="post" action="preferences.php"
+                          onsubmit="return confirm('2FA wirklich deaktivieren?');">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="totp_disable">
+                        <button type="submit" class="btn btn-primary">2FA deaktivieren</button>
+                    </form>
+
+                <?php elseif ($setupSecret !== null): ?>
+                    <p class="text-muted" style="margin-bottom:.5rem">
+                        Scanne den QR-Code mit deiner Authenticator-App:
+                    </p>
+                    <div class="totp-qr-wrap"><?= $setupQrHtml ?></div>
+                    <p class="text-muted" style="margin-bottom:.75rem">
+                        Oder gib den Code manuell ein:
+                        <span class="totp-secret"><?= htmlspecialchars($setupSecret, ENT_QUOTES, 'UTF-8') ?></span>
+                    </p>
+                    <form method="post" action="preferences.php">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="totp_confirm">
+                        <div class="form-group">
+                            <label for="totp_code">6-stelliger Code zur Bestätigung</label>
+                            <input type="text" id="totp_code" name="totp_code"
+                                   inputmode="numeric" maxlength="6"
+                                   autocomplete="one-time-code" required autofocus
+                                   class="totp-code-input" style="max-width:200px;">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Bestätigen</button>
+                    </form>
+
+                <?php else: ?>
+                    <p class="text-muted" style="margin-bottom:.75rem">
+                        2FA ist derzeit nicht aktiviert. Aktiviere es, um dein Konto mit einem
+                        zweiten Faktor zu schützen.
+                    </p>
+                    <form method="post" action="preferences.php">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="totp_start">
+                        <button type="submit" class="btn btn-primary">2FA aktivieren</button>
+                    </form>
+                <?php endif; ?>
             </div>
         </div>
 
