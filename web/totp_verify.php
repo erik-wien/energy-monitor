@@ -14,8 +14,11 @@ if (!empty($_SESSION['loggedin'])) {
 
 $error = '';
 
+$pendingUser = $_SESSION['auth_totp_pending']['user_data']['username'] ?? '(none)';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify()) {
+        appendLog($con, 'auth_fail', 'CSRF failed on TOTP verify (user="' . $pendingUser . '")', 'web');
         addAlert('danger', 'Ungültige Anfrage.');
         header('Location: totp_verify.php'); exit;
     }
@@ -27,6 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         addAlert('info', 'Willkommen zurück.');
         header('Location: ./'); exit;
     }
+
+    appendLog($con, 'auth_fail', 'TOTP failed (user="' . $pendingUser . '"): ' . $result['error'], 'web');
 
     $error = $result['error'];
     // If the library cleared the pending state (TTL, max attempts), bounce to login.
@@ -40,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $pending = $_SESSION['auth_totp_pending'] ?? null;
     if ($pending === null || time() > $pending['until']) {
+        if ($pending !== null) {
+            appendLog($con, 'auth_fail', 'TOTP pending expired (user="' . $pendingUser . '")', 'web');
+        }
         unset($_SESSION['auth_totp_pending']);
         addAlert('danger', 'Sitzung abgelaufen. Bitte erneut anmelden.');
         header('Location: login.php'); exit;

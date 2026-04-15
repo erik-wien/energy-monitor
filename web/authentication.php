@@ -1,12 +1,17 @@
 <?php
 require_once __DIR__ . '/../inc/initialize.php';
 
+$attemptUser = substr((string)($_POST['login-username'] ?? ''), 0, 64);
+$logUser     = $attemptUser !== '' ? $attemptUser : '(empty)';
+
 if (empty($_POST['login-username']) || empty($_POST['login-password'])) {
+    appendLog($con, 'auth_fail', 'Missing credentials (user="' . $logUser . '")', 'web');
     addAlert('danger', 'Bitte sowohl Benutzername als auch Kennwort ausfüllen.');
     header('Location: login.php'); exit;
 }
 
 if (!csrf_verify()) {
+    appendLog($con, 'auth_fail', 'CSRF failed on login (user="' . $logUser . '")', 'web');
     addAlert('danger', 'Ungültige Anfrage.');
     header('Location: login.php'); exit;
 }
