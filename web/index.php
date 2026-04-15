@@ -50,10 +50,12 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
-    <link rel="icon" type="image/x-icon" href="<?= $base ?>/img/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/img/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/img/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/img/apple-touch-icon.png">
+    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
 </head>
 <body>
 <?php $page_type = 'index'; require __DIR__ . '/../inc/_header.php'; ?>
@@ -95,6 +97,6 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 
     </div>
 </main>
-<?php echo '<footer class="app-footer"><span>&copy; ' . date('Y') . ' Erik R. Accart-Huemer</span> <a href="https://www.eriks.cloud/#impressum" target="_blank" rel="noopener">Impressum</a> <span>' . APP_NAME . ' ' . APP_VERSION . '.' . APP_BUILD . ' &middot; ' . APP_ENV . '</span></footer>'; ?>
+<?php require __DIR__ . '/../inc/_footer.php'; ?>
 </body>
 </html>

@@ -23,10 +23,13 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
 ?>
 <script nonce="<?= $_cspNonce ?>">document.documentElement.dataset.theme = <?= json_encode($_theme) ?>;</script>
 <header class="app-header">
-    <a class="brand" href="<?= $base ?>/">
-        <img src="<?= $base ?>/img/jardyx.svg" class="header-logo" width="28" height="28" alt="">
-        <span class="header-appname">Energie</span>
-    </a>
+    <div class="header-left">
+        <a class="brand" href="<?= $base ?>/">
+            <img src="<?= $base ?>/assets/jardyx.svg" class="header-logo" width="28" height="28" alt="">
+            <span class="header-appname">Energie</span>
+        </a>
+    </div>
+    <div class="header-right">
     <nav class="header-nav">
         <a href="<?= $base ?>/daily.php?date=<?= $_nav_today ?>"
            <?= $page_type === 'daily'   ? 'class="active"' : '' ?>>Aktuell</a>
@@ -51,8 +54,11 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
         <div class="user-dropdown">
             <span class="dropdown-username"><?= $_username ?></span>
             <div class="dropdown-divider"></div>
-            <a href="<?= $base ?>/preferences.php">Einstellungen</a>
-            <a href="<?= $base ?>/security.php">Sicherheit</a>
+            <a href="<?= $base ?>/preferences.php" class="dropdown-link-btn">Einstellungen</a>
+            <a href="<?= $base ?>/security.php" class="dropdown-link-btn">Passwort &amp; 2FA</a>
+            <?php if ($_isAdmin): ?>
+                <a href="<?= $base ?>/admin.php" class="dropdown-link-btn">Administration</a>
+            <?php endif; ?>
             <?php if ($_import_count > 0): ?>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger">
@@ -77,6 +83,7 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
                 <button type="submit" class="dropdown-link-btn">Abmelden</button>
             </form>
         </div>
+    </div>
     </div>
 </header>
 <?php if ($_import_count > 0): ?>

@@ -69,14 +69,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetRow !== null) {
     <link rel="stylesheet" href="<?= $_b ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $_b ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $_b ?>/styles/energie.css">
-    <link rel="icon" type="image/x-icon" href="<?= $_b ?>/img/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="<?= $_b ?>/assets/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= $_b ?>/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?= $_b ?>/assets/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?= $_b ?>/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?= $_b ?>/assets/web-app-manifest-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="<?= $_b ?>/assets/web-app-manifest-512x512.png">
 </head>
 <body>
 <header class="app-header">
-    <span class="brand">
-        <img src="<?= $_b ?>/img/jardyx.svg" class="header-logo" width="28" height="28" alt="">
-        <span class="header-appname">Energie</span>
-    </span>
+    <div class="header-left">
+        <span class="brand">
+            <img src="<?= $_b ?>/assets/jardyx.svg" class="header-logo" width="28" height="28" alt="">
+            <span class="header-appname">Energie</span>
+        </span>
+    </div>
+    <div class="header-right"></div>
 </header>
 <div class="login-wrap">
     <div class="login-card">
