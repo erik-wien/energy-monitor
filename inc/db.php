@@ -3,18 +3,12 @@ require_once __DIR__ . '/initialize.php';
 // Shared DB connection — include this file, do not access directly
 // $base: URL prefix for this app (e.g. '/energie' or '/energie.test')
 $base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
-$config_path = $base === '/energie.test'
-    ? '/opt/homebrew/etc/energie-config-dev.ini'
-    : '/opt/homebrew/etc/energie-config.ini';
-$cfg = parse_ini_file($config_path, true);
-if (!$cfg) {
-    http_response_code(500);
-    die(json_encode(['error' => 'Config not found']));
-}
+
+$cfg = energie_load_config();
 
 try {
     $pdo = new PDO(
-        "mysql:host={$cfg['db']['host']};dbname={$cfg['db']['database']};charset=utf8mb4",
+        "mysql:host={$cfg['db']['host']};dbname={$cfg['db']['name']};charset=utf8mb4",
         $cfg['db']['user'],
         $cfg['db']['password'],
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
