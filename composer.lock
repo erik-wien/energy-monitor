@@ -174,7 +174,7 @@
             "dist": {
                 "type": "path",
                 "url": "../auth",
-                "reference": "5a675cea15a97284bae1a9eadc666d26f077b3d0"
+                "reference": "c52e7c8e2a8e46d18f2e5f748e651f2adbc8ffd4"
             },
             "require": {
                 "chillerlan/php-qrcode": "^5.0",
