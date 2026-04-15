@@ -1,9 +1,24 @@
 # Config template — copy to config.yaml and fill in your values
 
+target: world4you
 db:
-  host: localhost
-  name: energie
-  user: energie
+  host: mysqlsvr78.world4you.com
+  name: 5279249db19
+  user: sql6675098
+  password: your_password
+deploy:
+  ftp_host: ftp.world4you.com
+  ftp_user: your_ftp_user
+  ftp_password: your_ftp_password
+  ssh_host: www11.world4you.com
+  ssh_user: ftp5279249
+  ssh_port: 22
+  ssh_key: ~/.ssh/id_rsa_world4you
+  ftp_base_dir: /jardyx.com/energie/
+auth_db:
+  host: mysqlsvr78.world4you.com
+  name: 5279249db19
+  user: sql6675098
   password: your_password
 smtp:
   host: smtp.world4you.com
@@ -16,7 +31,7 @@ slack:
   bot_token: your_bot_token
   channel_id: C0ARC5TDWEL
 app:
-  base_url: http://localhost/energie.test
+  base_url: https://energie.jardyx.com
 hofer:
   username: fu.armin@gmail.com
   password: your_password
