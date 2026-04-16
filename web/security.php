@@ -184,7 +184,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
                         <input type="password" id="newPassword2" name="newPassword2"
                                class="form-control" autocomplete="new-password" minlength="8" required>
                     </div>
-                    <button class="btn btn-primary" type="submit">Speichern</button>
+                    <button class="btn btn-outline-success" type="submit">Speichern</button>
                 </form>
             </div>
         </div>
@@ -207,7 +207,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
                           onsubmit="return confirm('2FA wirklich deaktivieren?');">
                         <?= csrf_input() ?>
                         <input type="hidden" name="action" value="totp_disable">
-                        <button type="submit" class="btn btn-primary">2FA deaktivieren</button>
+                        <button type="submit" class="btn">2FA deaktivieren</button>
                     </form>
 
                 <?php elseif ($setupSecret !== null): ?>
@@ -229,7 +229,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
                                    autocomplete="one-time-code" required autofocus
                                    class="totp-code-input" style="max-width:200px;">
                         </div>
-                        <button type="submit" class="btn btn-primary">Bestätigen</button>
+                        <button type="submit" class="btn btn-outline-success">Bestätigen</button>
                     </form>
 
                 <?php else: ?>
@@ -240,7 +240,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
                     <form method="post" action="security.php">
                         <?= csrf_input() ?>
                         <input type="hidden" name="action" value="totp_start">
-                        <button type="submit" class="btn btn-primary">2FA aktivieren</button>
+                        <button type="submit" class="btn btn-outline-success">2FA aktivieren</button>
                     </form>
                 <?php endif; ?>
             </div>

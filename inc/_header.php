@@ -1,91 +1,68 @@
 <?php
-// Expected vars from including file:
-// $base       string  URL prefix (e.g. '/energie.test')
-// $page_type  string  'daily' | 'weekly' | 'monthly' | 'yearly' | 'index' | 'preferences' | 'security'
+// _header.php — thin adapter for \Erikr\Chrome\Header.
+//
+// Expected vars from including page:
+//   $base       URL prefix (e.g. '/energie.test'), defined by inc/db.php
+//   $page_type  'daily' | 'weekly' | 'monthly' | 'yearly' | 'index'
+//               | 'preferences' | 'security' | 'help' | 'admin'
+//   $pdo        PDO handle to the data DB (used for nav-target lookup)
+//   $_cspNonce  set by auth_bootstrap()
 
-// Count importable files in scrapes/
+// ── App-specific nav targets ──────────────────────────────────────────────────
+
+$_stmt_latest     = $pdo->query("SELECT MAX(day) AS d FROM daily_summary WHERE consumed_kwh > 0");
+$_nav_today       = ($_stmt_latest->fetchColumn()) ?: date('Y-m-d');
+$_nav_week_year   = (int) date('o');
+$_nav_week_num    = (int) date('W');
+$_nav_month_year  = (int) date('Y');
+$_nav_month_month = (int) date('n');
+
+$_appMenu = [
+    ['type' => 'daily',   'label' => 'Aktuell',
+     'href' => 'daily.php?date=' . $_nav_today],
+    ['type' => 'weekly',  'label' => 'Woche',
+     'href' => 'weekly.php?year=' . $_nav_week_year . '&week=' . $_nav_week_num],
+    ['type' => 'monthly', 'label' => 'Monat',
+     'href' => 'monthly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
+    ['type' => 'yearly',  'label' => 'Jahr',
+     'href' => 'yearly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
+];
+
+// ── Import / CSV upload dropdown extras ───────────────────────────────────────
+
 $_scrapes_dir  = dirname(__DIR__) . '/scrapes';
 $_import_count = count(array_merge(
     glob($_scrapes_dir . '/*.csv')  ?: [],
     glob($_scrapes_dir . '/*.xlsx') ?: []
 ));
+$_isAdmin = (($_SESSION['rights'] ?? '') === 'Admin');
 
-// Nav targets
-$_stmt_latest     = $pdo->query("SELECT MAX(day) AS d FROM daily_summary WHERE consumed_kwh > 0");
-$_nav_today       = ($_stmt_latest->fetchColumn()) ?: date('Y-m-d');
-$_nav_week_year   = (int)date('o');
-$_nav_week_num    = (int)date('W');
-$_nav_month_year  = (int)date('Y');
-$_nav_month_month = (int)date('n');
-$_theme           = $_SESSION['theme'] ?? 'auto';
-$_username        = htmlspecialchars($_SESSION['username'] ?? '', ENT_QUOTES);
-$_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
+$_extras = [];
+if ($_import_count > 0) {
+    $_extras[] = '<button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger" type="button">'
+               . 'Importieren (' . $_import_count . ')'
+               . '</button>';
+} elseif ($_isAdmin) {
+    $_extras[] = '<label class="dropdown-link-btn" style="cursor:pointer" for="csv-upload-input" id="upload-label">'
+               . 'CSV hochladen'
+               . '</label>'
+               . '<input type="file" id="csv-upload-input" accept=".csv" style="display:none">';
+}
+
+// ── Render shared header ──────────────────────────────────────────────────────
+
+\Erikr\Chrome\Header::render([
+    'appName'       => 'Energie',
+    'base'          => $base,
+    'cspNonce'      => $_cspNonce ?? '',
+    'csrfToken'     => function_exists('csrf_token') ? csrf_token() : '',
+    'pageType'      => $page_type ?? '',
+    'appMenu'       => $_appMenu,
+    'extraItems'    => $_extras,
+    'brandLogoSrc'  => $base . '/assets/jardyx.svg',
+    'themeEndpoint' => $base . '/preferences.php',
+]);
 ?>
-<script nonce="<?= $_cspNonce ?>">document.documentElement.dataset.theme = <?= json_encode($_theme) ?>;</script>
-<header class="app-header">
-    <div class="header-left">
-        <a class="brand" href="<?= $base ?>/">
-            <img src="<?= $base ?>/assets/jardyx.svg" class="header-logo" width="28" height="28" alt="">
-            <span class="header-appname">Energie</span>
-        </a>
-    </div>
-    <div class="header-right">
-    <nav class="header-nav">
-        <a href="<?= $base ?>/daily.php?date=<?= $_nav_today ?>"
-           <?= $page_type === 'daily'   ? 'class="active"' : '' ?>>Aktuell</a>
-        <a href="<?= $base ?>/weekly.php?year=<?= $_nav_week_year ?>&amp;week=<?= $_nav_week_num ?>"
-           <?= $page_type === 'weekly'  ? 'class="active"' : '' ?>>Woche</a>
-        <a href="<?= $base ?>/monthly.php?year=<?= $_nav_month_year ?>&amp;month=<?= $_nav_month_month ?>"
-           <?= $page_type === 'monthly' ? 'class="active"' : '' ?>>Monat</a>
-        <a href="<?= $base ?>/yearly.php?year=<?= $_nav_month_year ?>&amp;month=<?= $_nav_month_month ?>"
-           <?= $page_type === 'yearly'  ? 'class="active"' : '' ?>>Jahr</a>
-    </nav>
-    <div class="user-menu">
-        <button class="user-btn" type="button">
-            <img src="<?= $base ?>/avatar.php" class="avatar" width="26" height="26" alt="">
-            <span><?= $_username ?></span>
-            <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M2 4l4 4 4-4"/>
-            </svg>
-            <?php if ($_import_count > 0): ?>
-                <span class="notif-dot" title="<?= $_import_count ?> Datei(en) importierbar"></span>
-            <?php endif; ?>
-        </button>
-        <div class="user-dropdown">
-            <span class="dropdown-username"><?= $_username ?></span>
-            <div class="dropdown-divider"></div>
-            <a href="<?= $base ?>/preferences.php" class="dropdown-link-btn">Einstellungen</a>
-            <a href="<?= $base ?>/security.php" class="dropdown-link-btn">Passwort &amp; 2FA</a>
-            <?php if ($_isAdmin): ?>
-                <a href="<?= $base ?>/admin.php" class="dropdown-link-btn">Administration</a>
-            <?php endif; ?>
-            <?php if ($_import_count > 0): ?>
-                <div class="dropdown-divider"></div>
-                <button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger">
-                    Importieren (<?= $_import_count ?>)
-                </button>
-            <?php elseif ($_isAdmin): ?>
-                <div class="dropdown-divider"></div>
-                <label class="dropdown-link-btn" style="cursor:pointer" for="csv-upload-input" id="upload-label">
-                    CSV hochladen
-                </label>
-                <input type="file" id="csv-upload-input" accept=".csv" style="display:none">
-            <?php endif; ?>
-            <div class="dropdown-divider"></div>
-            <div class="theme-row">
-                <button class="theme-btn <?= $_theme === 'light' ? 'active' : '' ?>" data-theme="light" title="Hell">☀</button>
-                <button class="theme-btn <?= $_theme === 'auto'  ? 'active' : '' ?>" data-theme="auto"  title="Auto">⬤</button>
-                <button class="theme-btn <?= $_theme === 'dark'  ? 'active' : '' ?>" data-theme="dark"  title="Dunkel">🌙</button>
-            </div>
-            <div class="dropdown-divider"></div>
-            <form method="post" action="<?= $base ?>/logout.php" style="margin:0">
-                <?= csrf_input() ?>
-                <button type="submit" class="dropdown-link-btn">Abmelden</button>
-            </form>
-        </div>
-    </div>
-    </div>
-</header>
 <?php if ($_import_count > 0): ?>
 <dialog id="import-dialog">
     <h3>Import-Vorschau</h3>
@@ -98,25 +75,15 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
         <span class="value new" id="imp-new">…</span>
     </div>
     <div class="import-dialog-btns">
-        <button class="btn" id="imp-cancel"
-            style="background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-text)">Abbrechen</button>
-        <button class="btn btn-primary" id="imp-confirm">Importieren</button>
+        <button class="btn" id="imp-cancel">Abbrechen</button>
+        <button class="btn btn-outline-success" id="imp-confirm">Importieren</button>
     </div>
 </dialog>
 <?php endif; ?>
 <script nonce="<?= $_cspNonce ?>">
 (function() {
-    const menu      = document.querySelector('.user-menu');
     const apiBase   = <?= json_encode($base) ?>;
     const csrfToken = <?= json_encode(csrf_token()) ?>;
-    if (!menu) return;
-
-    // Dropdown toggle
-    menu.querySelector('.user-btn').addEventListener('click', e => {
-        e.stopPropagation();
-        menu.classList.toggle('open');
-    });
-    document.addEventListener('click', () => menu.classList.remove('open'));
 
     // Import status toast (shown after page reload)
     const _stored = sessionStorage.getItem('importResult');
@@ -144,7 +111,7 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
         const impNew      = document.getElementById('imp-new');
         const impCancel   = document.getElementById('imp-cancel');
         const impConfirm  = document.getElementById('imp-confirm');
-        const importLabel = 'Importieren (<?= $_import_count ?>)';
+        const importLabel = importBtn.textContent;
 
         function _runImport() {
             impConfirm.disabled    = true;
@@ -226,20 +193,5 @@ $_isAdmin         = (($_SESSION['rights'] ?? '') === 'Admin');
                 .catch(() => { alert('Netzwerkfehler beim Upload'); csvInput.value = ''; });
         });
     }
-
-    // Theme switcher
-    menu.querySelectorAll('.theme-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            const theme = btn.dataset.theme;
-            document.documentElement.dataset.theme = theme;
-            menu.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
-            const fd = new FormData();
-            fd.append('action', 'change_theme');
-            fd.append('theme', theme);
-            fd.append('csrf_token', csrfToken);
-            fetch(apiBase + '/preferences.php', { method: 'POST', body: fd }).catch(() => {});
-        });
-    });
 })();
 </script>

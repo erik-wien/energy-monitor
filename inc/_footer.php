@@ -1,5 +1,6 @@
-<footer class="app-footer">
-    <a href="<?= $base ?>/impressum.html">Impressum</a>
-    <span>&copy; <?= date('Y') ?> Erik R. Accart-Huemer</span>
-    <span><?= APP_VERSION ?>.<?= APP_BUILD ?> <?= APP_ENV ?></span>
-</footer>
+<?php
+// _footer.php — thin adapter for \Erikr\Chrome\Footer.
+\Erikr\Chrome\Footer::render([
+    'base'  => $base,
+    'owner' => 'Erik R. Accart-Huemer',
+]);

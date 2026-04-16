@@ -9,7 +9,8 @@ if (empty($_SESSION['loggedin'])) {
 
 header('Content-Type: application/json');
 
-$type = $_GET['type'] ?? '';
+// Accept `?action=` (Rule §15.1) as an alias for the legacy `?type=` dispatch.
+$type = $_GET['action'] ?? $_GET['type'] ?? '';
 
 /**
  * Parse timestamp strings from a semicolon-delimited Energie CSV.
@@ -581,83 +582,12 @@ if ($type === 'daily') {
     $_SESSION['theme'] = $theme;
     echo json_encode(['ok' => true]);
 
-} elseif (
-    $type === 'admin_user_create' ||
-    $type === 'admin_user_edit'   ||
-    $type === 'admin_user_reset'  ||
-    $type === 'admin_user_delete'
-) {
-    if (($_SESSION['rights'] ?? '') !== 'Admin') {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Forbidden']);
-        exit;
-    }
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_verify()) {
-        http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Ungültige Anfrage.']);
-        exit;
-    }
-
-    if ($type === 'admin_user_create') {
-        $username = trim((string) ($_POST['username'] ?? ''));
-        $email    = trim((string) ($_POST['email']    ?? ''));
-        $rights   = (string) ($_POST['rights'] ?? 'User');
-        if ($username === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            echo json_encode(['ok' => false, 'error' => 'Benutzername und gültige E-Mail erforderlich.']);
-            exit;
-        }
-        try {
-            admin_create_user($con, $username, $email, $rights, APP_BASE_URL);
-            appendLog($con, 'admin', "Created user {$username} ({$email})");
-            echo json_encode(['ok' => true]);
-        } catch (\mysqli_sql_exception $e) {
-            echo json_encode(['ok' => false, 'error' => 'Benutzername oder E-Mail bereits vergeben.']);
-        }
-        exit;
-    }
-
-    if ($type === 'admin_user_edit') {
-        $targetId  = (int) ($_POST['id'] ?? 0);
-        $email     = trim((string) ($_POST['email'] ?? ''));
-        $rights    = (string) ($_POST['rights'] ?? 'User');
-        $disabled  = (int) !empty($_POST['disabled']);
-        $debug     = (int) !empty($_POST['debug']);
-        $totpReset = !empty($_POST['totp_reset']);
-        if ($targetId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            echo json_encode(['ok' => false, 'error' => 'Ungültige Eingabe.']);
-            exit;
-        }
-        admin_edit_user($con, $targetId, $email, $rights, $disabled, $debug, $totpReset);
-        echo json_encode(['ok' => true]);
-        exit;
-    }
-
-    if ($type === 'admin_user_reset') {
-        $targetId = (int) ($_POST['id'] ?? 0);
-        if ($targetId <= 0) {
-            echo json_encode(['ok' => false, 'error' => 'Ungültige ID.']);
-            exit;
-        }
-        $ok = admin_reset_password($con, $targetId, APP_BASE_URL);
-        echo json_encode($ok ? ['ok' => true] : ['ok' => false, 'error' => 'E-Mail konnte nicht gesendet werden.']);
-        exit;
-    }
-
-    if ($type === 'admin_user_delete') {
-        $targetId = (int) ($_POST['id'] ?? 0);
-        $selfId   = (int) ($_SESSION['id'] ?? 0);
-        if ($targetId <= 0) {
-            echo json_encode(['ok' => false, 'error' => 'Ungültige ID.']);
-            exit;
-        }
-        if ($targetId === $selfId) {
-            echo json_encode(['ok' => false, 'error' => 'Sie können sich nicht selbst löschen.']);
-            exit;
-        }
-        $ok = admin_delete_user($con, $targetId, $selfId);
-        echo json_encode($ok ? ['ok' => true] : ['ok' => false, 'error' => 'Löschen fehlgeschlagen.']);
-        exit;
-    }
+} elseif (str_starts_with($type, 'admin_')) {
+    \Erikr\Chrome\Admin\Dispatch::handle($con, $type, [
+        'baseUrl' => APP_BASE_URL,
+        'selfId'  => (int) ($_SESSION['id'] ?? 0),
+    ]);
+    exit;
 
 } else {
     http_response_code(400);
