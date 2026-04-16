@@ -46,6 +46,23 @@ unset($_cfg);
 
 // ── Bootstrap (security headers + session + CSRF) ─────────────────────────────
 
+// img-src blob: is required by the Cropper.js avatar editor in preferences.php,
+// which previews the selected file via URL.createObjectURL() before upload.
 auth_bootstrap([
     'style-src' => 'https://cdn.jsdelivr.net',  // Flatpickr, Chart.js CDN assets
+    'img-src'   => 'blob:',
 ]);
+
+// ── Cross-DB cleanup hooks for admin_delete_user() ────────────────────────────
+//
+// en_preferences lives in the Energie data DB ($pdo), while auth_accounts lives
+// in jardyx_auth ($con). On local/akadbrain these are different DBs; on
+// world4you they happen to collide in one DB. Either way, we cannot rely on
+// FK ON DELETE CASCADE across DBs, so register a cleanup hook that runs
+// inside admin_delete_user()'s DELETE transaction.
+admin_register_delete_cleanup(static function (mysqli $authCon, int $userId): void {
+    global $pdo;
+    if (!isset($pdo)) { return; }
+    $stmt = $pdo->prepare('DELETE FROM en_preferences WHERE user_id = ?');
+    $stmt->execute([$userId]);
+});

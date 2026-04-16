@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c4a32324342abce972a4db92894c67e3",
+    "content-hash": "4f303c839e071fa09ef1ca9e37c62b3c",
     "packages": [
         {
             "name": "chillerlan/php-qrcode",
@@ -174,7 +174,7 @@
             "dist": {
                 "type": "path",
                 "url": "../auth",
-                "reference": "c52e7c8e2a8e46d18f2e5f748e651f2adbc8ffd4"
+                "reference": "3e748e56ce5194de36f60c7916140531057898c6"
             },
             "require": {
                 "chillerlan/php-qrcode": "^5.0",
@@ -194,6 +194,7 @@
                     "src/invite.php",
                     "src/admin.php",
                     "src/totp.php",
+                    "src/avatar.php",
                     "src/bootstrap.php"
                 ]
             },
@@ -203,6 +204,29 @@
                 }
             },
             "description": "Shared auth, session, CSRF, logging and mailer library",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "erikr/chrome",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "../chrome",
+                "reference": "fb503b280896c6557238a4385db6fbe8153a3f75"
+            },
+            "require": {
+                "erikr/auth": "*",
+                "php": ">=8.2"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Erikr\\Chrome\\": "src/"
+                }
+            },
+            "description": "Shared UI chrome: header, footer, user dropdown, avatar, admin partials",
             "transport-options": {
                 "relative": true
             }
