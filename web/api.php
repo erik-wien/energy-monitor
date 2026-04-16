@@ -459,7 +459,7 @@ if ($type === 'daily') {
     $total    = 0;
     foreach ($files as $file) {
         $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $config_path, 'import-csv', $file], $desc, $pipes, $root);
+        $proc = proc_open(['/usr/local/bin/python3', $script, 'import-csv', $file], $desc, $pipes, $root);
         $out  = $proc ? stream_get_contents($pipes[1]) : '';
         $err  = $proc ? stream_get_contents($pipes[2]) : '';
         if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
