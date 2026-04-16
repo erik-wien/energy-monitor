@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+require_once __DIR__ . '/../inc/csv_parser.php';
 
 if (empty($_SESSION['loggedin'])) {
     http_response_code(401);
@@ -11,41 +12,6 @@ header('Content-Type: application/json');
 
 // Accept `?action=` (Rule §15.1) as an alias for the legacy `?type=` dispatch.
 $type = $_GET['action'] ?? $_GET['type'] ?? '';
-
-/**
- * Parse timestamp strings from a semicolon-delimited Energie CSV.
- * Handles UTF-8 BOM, DD.MM.YYYY or DD.MM.YY date format, HH:MM or HH:MM:SS time.
- * Returns array of 'YYYY-MM-DDTHH:MM:SS' strings (not yet DB-formatted).
- */
-function _parse_energie_csv_timestamps(string $path): array {
-    $handle = fopen($path, 'r');
-    if (!$handle) return [];
-    $first   = ltrim((string) fgets($handle), "\xEF\xBB\xBF");  // strip BOM
-    $headers = array_map('trim', str_getcsv(trim($first), ';', '"', ''));
-    $dIdx = array_search('Datum', $headers, true);
-    $vIdx = array_search('Zeit von', $headers, true);
-    if ($vIdx === false) $vIdx = array_search('von', $headers, true);
-    $kIdx = null;
-    foreach ($headers as $i => $h) {
-        if (str_contains($h, 'Verbrauch') || str_contains($h, 'kWh')) { $kIdx = $i; break; }
-    }
-    if ($dIdx === false || $vIdx === false || $kIdx === null) { fclose($handle); return []; }
-    $timestamps = [];
-    while (($line = fgets($handle)) !== false) {
-        $cols  = str_getcsv(trim($line), ';', '"', '');
-        $datum = trim($cols[$dIdx] ?? '');
-        $von   = trim($cols[$vIdx] ?? '');
-        $kwh   = trim($cols[$kIdx] ?? '');
-        if (!$datum || !$von || !$kwh) continue;
-        $parts = explode('.', $datum);
-        if (count($parts) !== 3) continue;
-        $year = strlen($parts[2]) === 2 ? '20' . $parts[2] : $parts[2];
-        if (substr_count($von, ':') === 1) $von .= ':00';
-        $timestamps[] = sprintf('%s-%02d-%02dT%s', $year, (int)$parts[1], (int)$parts[0], $von);
-    }
-    fclose($handle);
-    return $timestamps;
-}
 
 // Global Y-axis maxima for consistent scale across all charts
 $max_daily_kwh  = (float)$pdo->query("SELECT MAX(consumed_kwh) FROM daily_summary")->fetchColumn();
@@ -451,17 +417,11 @@ if ($type === 'daily') {
         echo json_encode(['ok' => true, 'count' => 0, 'rows' => 0]);
         exit;
     }
-    $script   = $root . '/energie.py';
-    // Pick the same config file inc/config.php uses, so the Python import
-    // writes to the same DB the web UI reads from (dev → energie_dev,
-    // prod → energie). Passing --config overrides energie.py's default
-    // of config.ini next to the script.
-    $baseScript = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/');
-    $devIni     = '/opt/homebrew/etc/energie-config-dev.ini';
-    $prodIni    = '/opt/homebrew/etc/energie-config.ini';
-    $configPath = ($baseScript === '/energie.test' && is_readable($devIni))
-        ? $devIni
-        : $prodIni;
+    $script = $root . '/energie.py';
+    // Same config resolver inc/config.php uses — dev ini on /energie.test,
+    // prod ini everywhere else — so the Python import writes to the DB
+    // the web UI reads from.
+    $configPath = energie_config_path();
     $log      = '';
     $ok       = true;
     $imported = 0;

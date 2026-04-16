@@ -169,6 +169,41 @@ python energie.py fetch-all
 
 ---
 
+## Running Tests
+
+Two suites — Python via **pytest**, PHP via **PHPUnit** — wrapped in a Makefile.
+
+```bash
+make test              # both suites
+make test-py           # pytest only
+make test-php          # PHPUnit only
+make test-db-setup     # one-time: create energie_test DB + grants (needs root MySQL)
+make test-db-drop      # remove the test DB
+```
+
+The DB integration tests target a separate `energie_test` database so they
+can truncate tables freely. `make test-db-setup` runs the `CREATE DATABASE`
+and `GRANT` for you (equivalent to):
+
+```sql
+CREATE DATABASE IF NOT EXISTS energie_test CHARACTER SET utf8mb4;
+GRANT ALL PRIVILEGES ON energie_test.* TO 'energie'@'localhost';
+```
+
+Tests that need the DB skip themselves with a clear message if this step has
+not been run, so `make test-py` is safe to run without it — you just get fewer
+tests.
+
+**Non-Homebrew hosts / CI** override the ini location via `ENERGIE_DEV_INI=/path/to/ini`.
+The repo's `.github/workflows/test.yml` spins up a MariaDB service container and
+writes a matching ini on the fly — use it as a reference when setting up a new
+host.
+
+New tests go in `tests/` (Python, files matching `test_*.py`) or `tests/php/`
+(PHP, classes extending `PHPUnit\Framework\TestCase`, files matching `*Test.php`).
+
+---
+
 ## Documentation
 
 | Document | Contents |
