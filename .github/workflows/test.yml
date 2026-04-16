@@ -1,0 +1,73 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: rootpw
+          MARIADB_DATABASE: energie_test
+          MARIADB_USER: energie
+          MARIADB_PASSWORD: energie_ci_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      ENERGIE_DEV_INI: ${{ github.workspace }}/ci-tmp/energie-config-dev.ini
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python deps
+        run: pip install -r requirements-test.txt
+
+      # ── PHP ───────────────────────────────────────────────────────────────
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer
+          coverage: none
+
+      - name: Install PHP deps
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      # ── Test config pointing at the CI MariaDB service ────────────────────
+      - name: Write dev ini for tests
+        run: |
+          mkdir -p ./ci-tmp
+          cat > ./ci-tmp/energie-config-dev.ini <<'EOF'
+          [db]
+          host = 127.0.0.1
+          port = 3306
+          user = energie
+          password = energie_ci_pw
+          database = energie_test
+          EOF
+
+      # ── Run both suites ───────────────────────────────────────────────────
+      - name: Python tests
+        run: pytest -v
+
+      - name: PHP tests
+        run: ./vendor/bin/phpunit

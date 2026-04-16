@@ -9,5 +9,8 @@
         "phpmailer/phpmailer": "^7.0",
         "erikr/auth": "*",
         "erikr/chrome": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11"
     }
 }
