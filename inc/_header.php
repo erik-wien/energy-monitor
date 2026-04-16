@@ -95,7 +95,9 @@ if ($_import_count > 0) {
             _el.className = 'alert ' + (_r.ok ? 'alert-success' : 'alert-danger');
             _el.style.cssText = 'margin:0.75rem 1.5rem;';
             _el.textContent = _r.ok
-                ? `Import abgeschlossen: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
+                ? (typeof _r.imported === 'number'
+                    ? `Import abgeschlossen: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
+                    : (_r.log || 'OK').trim().slice(0, 200))
                 : `Import fehlgeschlagen: ${(_r.log || _r.error || 'Unbekannter Fehler').trim().slice(0, 200)}`;
             document.querySelector('.app-header')?.insertAdjacentElement('afterend', _el);
             setTimeout(() => _el.remove(), 8000);
@@ -162,6 +164,12 @@ if ($_import_count > 0) {
         impCancel.addEventListener('click', () => importDialog.close());
         impConfirm.addEventListener('click', _runImport);
         importDialog.addEventListener('click', e => { if (e.target === importDialog) importDialog.close(); });
+
+        // Auto-open preview after a fresh CSV upload
+        if (sessionStorage.getItem('autoPreview') === '1') {
+            sessionStorage.removeItem('autoPreview');
+            importBtn.click();
+        }
     }
 
     // Admin CSV upload
@@ -179,10 +187,7 @@ if ($_import_count > 0) {
                 .then(r => r.json())
                 .then(d => {
                     if (d.ok) {
-                        sessionStorage.setItem('importResult', JSON.stringify({
-                            ok: true, rows: 0, count: 0,
-                            log: `Datei '${d.filename}' hochgeladen. Klicke auf Importieren.`,
-                        }));
+                        sessionStorage.setItem('autoPreview', '1');
                         location.reload();
                     } else {
                         alert(d.error || 'Upload fehlgeschlagen');
