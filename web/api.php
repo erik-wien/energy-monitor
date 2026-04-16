@@ -452,6 +452,16 @@ if ($type === 'daily') {
         exit;
     }
     $script   = $root . '/energie.py';
+    // Pick the same config file inc/config.php uses, so the Python import
+    // writes to the same DB the web UI reads from (dev → energie_dev,
+    // prod → energie). Passing --config overrides energie.py's default
+    // of config.ini next to the script.
+    $baseScript = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/');
+    $devIni     = '/opt/homebrew/etc/energie-config-dev.ini';
+    $prodIni    = '/opt/homebrew/etc/energie-config.ini';
+    $configPath = ($baseScript === '/energie.test' && is_readable($devIni))
+        ? $devIni
+        : $prodIni;
     $log      = '';
     $ok       = true;
     $imported = 0;
@@ -459,7 +469,7 @@ if ($type === 'daily') {
     $total    = 0;
     foreach ($files as $file) {
         $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        $proc = proc_open(['/usr/local/bin/python3', $script, 'import-csv', $file], $desc, $pipes, $root);
+        $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $configPath, 'import-csv', $file], $desc, $pipes, $root);
         $out  = $proc ? stream_get_contents($pipes[1]) : '';
         $err  = $proc ? stream_get_contents($pipes[2]) : '';
         if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
