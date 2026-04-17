@@ -44,7 +44,8 @@ function _csv_parse_rows(string $path): array {
     $handle = @fopen($path, 'r');
     if (!$handle) return [];
 
-    $first   = ltrim((string) fgets($handle), "\xEF\xBB\xBF");
+    $first = ltrim((string) fgets($handle), "\xEF\xBB\xBF");
+    if (trim($first) === '') { fclose($handle); return []; }
     $headers = array_map('trim', str_getcsv(trim($first), ';', '"', ''));
 
     $dIdx = array_search('Datum', $headers, true);
@@ -85,18 +86,30 @@ function _csv_parse_rows(string $path): array {
 }
 
 /**
- * Fetch spot_ct for every ts in one round-trip (chunked under 1000 placeholders
- * to stay well under any IN-clause limit). Returns [ts => spot_ct].
+ * Fetch spot_ct + has-consumption flag for every ts in one round-trip
+ * (chunked under 1000 placeholders to stay well under any IN-clause limit).
+ * Returns [ts => ['spot_ct' => float, 'had_consumption' => bool]].
+ *
+ * `had_consumption` matters for the import-dialog counters: a row created
+ * by a prior EPEX fetch (consumed_kwh = 0) is NOT "existing" from the
+ * user's perspective — importing the CSV fills in real consumption data.
  */
 function _csv_fetch_spot_map(PDO $pdo, array $timestamps): array {
     if (empty($timestamps)) return [];
     $map = [];
     foreach (array_chunk($timestamps, 1000) as $chunk) {
         $ph   = implode(',', array_fill(0, count($chunk), '?'));
-        $stmt = $pdo->prepare("SELECT ts, spot_ct FROM readings WHERE ts IN ($ph)");
+        $stmt = $pdo->prepare(
+            "SELECT ts, spot_ct, consumed_kwh > 0 AS had_consumption
+             FROM readings WHERE ts IN ($ph)"
+        );
         $stmt->execute($chunk);
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $map[(new DateTime($r['ts']))->format('Y-m-d\TH:i:s')] = (float) $r['spot_ct'];
+            $key = (new DateTime($r['ts']))->format('Y-m-d\TH:i:s');
+            $map[$key] = [
+                'spot_ct'         => (float) $r['spot_ct'],
+                'had_consumption' => (bool) $r['had_consumption'],
+            ];
         }
     }
     return $map;
@@ -154,7 +167,11 @@ function php_import_csv(PDO $pdo, string $filepath, string $archiv): array {
     $tariffs    = _csv_load_tariffs($pdo);
 
     $total    = count($rows);
-    $inserted = $total - count($spotMap);
+    $existing = 0;
+    foreach ($spotMap as $entry) {
+        if ($entry['had_consumption']) $existing++;
+    }
+    $inserted = $total - $existing;
 
     $pdo->beginTransaction();
     try {
@@ -164,7 +181,7 @@ function php_import_csv(PDO $pdo, string $filepath, string $archiv): array {
             foreach ($chunk as $row) {
                 $ts      = $row['ts'];
                 $kwh     = $row['consumed_kwh'];
-                $spot_ct = $spotMap[$ts] ?? 0.0;
+                $spot_ct = $spotMap[$ts]['spot_ct'] ?? 0.0;
                 $tariff  = _csv_tariff_for($tariffs, substr($ts, 0, 10));
                 $cost    = $tariff !== null ? _csv_calc_cost($kwh, $spot_ct, $tariff) : 0.0;
 
@@ -202,7 +219,7 @@ function php_import_csv(PDO $pdo, string $filepath, string $archiv): array {
 
     $log = sprintf(
         "%s: %d neu, %d vorhanden, %d gesamt\n",
-        basename($filepath), $inserted, $total - $inserted, $total
+        basename($filepath), $inserted, $existing, $total
     );
 
     if (is_dir($archiv)) {
