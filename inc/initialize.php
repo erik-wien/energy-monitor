@@ -17,7 +17,7 @@ define('APP_BASE_URL',      rtrim($_cfg['app']['base_url']       ?? '', '/'));
 define('APP_NAME',          $_cfg['app']['name']                 ?? 'Energie');
 define('APP_SUPPORT_EMAIL', $_cfg['app']['support_email']        ?? 'contact@eriks.cloud');
 define('APP_VERSION',       '1.1');
-define('APP_BUILD',         '2026-04-14');
+define('APP_BUILD',         1);
 define('APP_ENV',           $_cfg['app']['env']                  ?? 'dev');
 
 /** Energie's $con connects directly to the auth DB — no schema prefix needed. */
