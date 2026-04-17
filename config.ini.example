@@ -7,3 +7,19 @@ database = energie
 [slack]
 bot_token  = xoxb-your-token
 channel_id = C0123456789
+
+[wn_api]
+# Credentials
+client_id     = your-client-id
+client_secret = your-client-secret
+api_key       = your-gateway-api-key
+zaehlpunkt    = AT0010000000000000000000000000000000
+
+# Endpoints (defaults match current WN / log.wien infrastructure)
+token_url     = https://log.wien/auth/realms/logwien/protocol/openid-connect/token
+api_base      = https://api.wstw.at/gateway/WN_SMART_METER_API/1.0
+
+# Fetch behaviour
+wertetyp              = QUARTER_HOUR
+default_lookback_days = 3
+request_timeout       = 60
