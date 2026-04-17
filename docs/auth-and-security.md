@@ -32,8 +32,11 @@ require_once 'inc/db.php'
        │
        ├─ vendor/autoload.php  (loads erikr/auth)
        │
-       ├─ parse energie-config.ini → define APP_BASE_URL, SMTP_*, AUTH_DB_PREFIX
-       │   (initialize.php always reads the prod config for constants)
+       ├─ parse energie-config.ini → define APP_BASE_URL, APP_NAME,
+       │   APP_SUPPORT_EMAIL, AUTH_DB_PREFIX
+       │   (initialize.php always reads the prod config for constants;
+       │    SMTP credentials live in /opt/homebrew/etc/jardyx-mail.ini
+       │    read by the erikr/auth mailer — not per app)
        │
        ├─ parse config again → open MySQLi $con (jardyx_auth DB)
        │

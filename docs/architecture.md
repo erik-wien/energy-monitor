@@ -151,7 +151,9 @@ A complete round-trip for a daily drilldown page:
      → selects energie-config-dev.ini (dev) or energie-config.ini (prod)
      → include inc/initialize.php
          → vendor/autoload.php  (erikr/auth)
-         → parse ini → define SMTP_*, APP_BASE_URL
+         → parse ini → define APP_BASE_URL, APP_NAME, APP_SUPPORT_EMAIL
+           (SMTP creds live in /opt/homebrew/etc/jardyx-mail.ini,
+            read by the erikr/auth mailer)
          → open MySQLi $con → jardyx_auth DB
          → auth_bootstrap()
              → emit Content-Security-Policy (nonce), HSTS, X-Frame-Options

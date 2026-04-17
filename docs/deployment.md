@@ -56,16 +56,10 @@ user     = …
 password = …
 database = jardyx_auth
 
-[smtp]
-host      = …
-port      = 587
-user      = …
-password  = …
-from      = energie@example.com
-from_name = Energie
-
 [app]
-base_url = http://localhost/energie
+name          = Energie
+support_email = contact@eriks.cloud
+base_url      = http://localhost/energie
 
 [slack]
 bot_token  = xoxb-…
