@@ -44,20 +44,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ins->close();
 
                 $resetUrl = APP_BASE_URL . '/executeReset.php?token=' . urlencode($token);
-                $uname    = htmlspecialchars($row['username'], ENT_QUOTES, 'UTF-8');
-                $htmlBody = "<p>Hallo {$uname},</p>"
-                    . '<p>Wir haben eine Anfrage für ein neues Kennwort für Ihr Energie-Konto erhalten.</p>'
-                    . '<p><a href="' . htmlspecialchars($resetUrl, ENT_QUOTES, 'UTF-8') . '">Kennwort zurücksetzen</a></p>'
-                    . '<p>Dieser Link ist eine Stunde gültig. Wenn Sie keine Zurücksetzung beantragt haben, können Sie diese E-Mail ignorieren.</p>';
-                $textBody = "Hallo {$row['username']},\n\n"
-                    . "Kennwort zurücksetzen: {$resetUrl}\n\n"
-                    . "Dieser Link ist eine Stunde gültig.\n";
-
-                try {
-                    send_mail($email, $row['username'], 'Kennwort zurücksetzen – Energie', $htmlBody, $textBody);
+                if (mail_send_password_reset($email, $row['username'], $resetUrl)) {
                     appendLog($con, 'pwd_reset', 'Reset mail sent: ' . $row['username']);
-                } catch (Throwable $e) {
-                    appendLog($con, 'pwd_reset', 'Reset mail failed: ' . $e->getMessage());
+                } else {
+                    appendLog($con, 'pwd_reset', 'Reset mail failed: ' . $row['username']);
                 }
             }
 

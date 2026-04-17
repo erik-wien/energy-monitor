@@ -13,17 +13,12 @@ require_once __DIR__ . '/config.php';
 
 $_cfg = energie_load_config();
 
-define('APP_BASE_URL',  rtrim($_cfg['app']['base_url']   ?? '', '/'));
-define('APP_NAME',      'Energie');
-define('APP_VERSION',   '1.1');
-define('APP_BUILD',     '2026-04-14');
-define('APP_ENV',       $_cfg['app']['env']              ?? 'dev');
-define('SMTP_HOST',     $_cfg['smtp']['host']            ?? '');
-define('SMTP_PORT',     (int) ($_cfg['smtp']['port']     ?? 587));
-define('SMTP_USER',     $_cfg['smtp']['user']            ?? '');
-define('SMTP_PASS',     $_cfg['smtp']['password']        ?? '');
-define('SMTP_FROM',     $_cfg['smtp']['from']            ?? '');
-define('SMTP_FROM_NAME',$_cfg['smtp']['from_name']       ?? 'Energie');
+define('APP_BASE_URL',      rtrim($_cfg['app']['base_url']       ?? '', '/'));
+define('APP_NAME',          $_cfg['app']['name']                 ?? 'Energie');
+define('APP_SUPPORT_EMAIL', $_cfg['app']['support_email']        ?? 'contact@eriks.cloud');
+define('APP_VERSION',       '1.1');
+define('APP_BUILD',         '2026-04-14');
+define('APP_ENV',           $_cfg['app']['env']                  ?? 'dev');
 
 /** Energie's $con connects directly to the auth DB — no schema prefix needed. */
 define('AUTH_DB_PREFIX', '');

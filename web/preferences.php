@@ -88,22 +88,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $upd->close();
 
                     $confirmUrl = APP_BASE_URL . '/confirm_email.php?code=' . urlencode($code);
-                    $htmlBody   = '<p>Hallo ' . $uname . ',</p>'
-                        . '<p>Sie haben eine neue E-Mail-Adresse für Ihr Energie-Konto beantragt. '
-                        . 'Bitte bestätigen Sie sie mit diesem Link:</p>'
-                        . '<p><a href="' . htmlspecialchars($confirmUrl, ENT_QUOTES, 'UTF-8') . '">'
-                        . htmlspecialchars($confirmUrl, ENT_QUOTES, 'UTF-8') . '</a></p>'
-                        . '<p>Dieser Link ist 24 Stunden gültig.</p>'
-                        . '<p>Sollten Sie keine E-Mail-Änderung beantragt haben, ignorieren Sie diese Nachricht.</p>';
-                    $textBody   = "Hallo,\n\nBitte bestätigen Sie Ihre neue E-Mail-Adresse:\n$confirmUrl\n\n"
-                        . "Dieser Link ist 24 Stunden gültig.\n";
-
-                    try {
-                        send_mail($newEmail, $_SESSION['username'] ?? '', 'E-Mail-Adresse bestätigen', $htmlBody, $textBody);
+                    if (mail_send_email_change_confirmation($newEmail, $_SESSION['username'] ?? '', $confirmUrl)) {
                         appendLog($con, 'prefs', 'Email change requested for ' . ($_SESSION['username'] ?? ''));
                         addAlert('info', 'Bestätigungslink wurde an die neue E-Mail-Adresse gesendet.');
-                    } catch (Throwable $e) {
-                        appendLog($con, 'prefs', 'Email send failed: ' . $e->getMessage());
+                    } else {
+                        appendLog($con, 'prefs', 'Email send failed for ' . ($_SESSION['username'] ?? ''));
                         $errors['email'] = 'Die Bestätigungs-E-Mail konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.';
                     }
 
