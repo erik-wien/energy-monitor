@@ -309,6 +309,38 @@ def import_csv(cfg, filepath: str):
     print(f"📦 Archived → {dest}")
 
 
+# ── WN Smart Meter API ──────────────────────────────────────────────────────
+
+
+def import_api(cfg, date_from: str | None, date_to: str | None):
+    """Pull quarter-hour consumption from the WN Smart Meter API and upsert.
+
+    Defaults: `today-3d … today` (smart-meter data typically lags 24–48h).
+    """
+    from inc.wn_api import fetch_messwerte
+
+    lookback = int(cfg["wn_api"].get("default_lookback_days", 3))
+    today   = date.today()
+    to_d    = date.fromisoformat(date_to)   if date_to   else today
+    from_d  = date.fromisoformat(date_from) if date_from else today - timedelta(days=lookback)
+    from_dt = datetime.combine(from_d, datetime.min.time())
+    to_dt   = datetime.combine(to_d,   datetime.max.time().replace(microsecond=0))
+
+    print(f"⬇ Fetching WN Smart Meter data {from_d} … {to_d}")
+    rows = fetch_messwerte(cfg, from_dt, to_dt)
+    if not rows:
+        print("⚠ No rows returned from API.", file=sys.stderr)
+        return
+
+    conn = get_db(cfg)
+    try:
+        inserted, total = _compute_and_upsert_consumption(conn, rows)
+        rebuild_daily_summary(conn)
+    finally:
+        conn.close()
+    print(f"✅ API import: {inserted} new, {total - inserted} existing, {total} total")
+
+
 # ── Slack Notifications ──────────────────────────────────────────────────────
 
 import matplotlib
@@ -493,6 +525,13 @@ def main():
     p = sub.add_parser("import-csv")
     p.add_argument("file")
 
+    p = sub.add_parser("import-api",
+                       help="Fetch consumption from the WN Smart Meter API.")
+    p.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD",
+                   help="Start date (default: today-3d).")
+    p.add_argument("--to",   dest="date_to",   metavar="YYYY-MM-DD",
+                   help="End date inclusive (default: today).")
+
     sub.add_parser("notify")
 
     args = parser.parse_args()
@@ -511,6 +550,8 @@ def main():
                 import_csv(cfg, path)
     elif args.cmd == "import-csv":
         import_csv(cfg, args.file)
+    elif args.cmd == "import-api":
+        import_api(cfg, args.date_from, args.date_to)
     elif args.cmd == "notify":
         today = date.today()
         conn  = get_db(cfg)
