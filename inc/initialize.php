@@ -46,7 +46,7 @@ unset($_cfg);
 auth_bootstrap([
     'style-src' => 'https://cdn.jsdelivr.net',  // Flatpickr, Chart.js CDN assets
     'img-src'   => 'blob:',
-]);
+], $con);
 
 // ── Cross-DB cleanup hooks for admin_delete_user() ────────────────────────────
 //
