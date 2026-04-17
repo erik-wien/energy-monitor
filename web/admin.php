@@ -54,6 +54,9 @@ $pageUrl = static function (int $p, string $f): string {
         <div id="adminAlerts"></div>
 
         <nav class="tab-bar" role="tablist" aria-label="Administration">
+            <button type="button" class="tab-btn"
+                    id="tab-params" role="tab" aria-controls="panel-params"
+                    aria-selected="false" data-tab="params">App-Parameter</button>
             <button type="button" class="tab-btn active"
                     id="tab-users" role="tab" aria-controls="panel-users"
                     aria-selected="true" data-tab="users">Benutzerverwaltung</button>
@@ -61,6 +64,25 @@ $pageUrl = static function (int $p, string $f): string {
                     id="tab-log" role="tab" aria-controls="panel-log"
                     aria-selected="false" data-tab="log">Log</button>
         </nav>
+
+        <section id="panel-params" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-params">
+            <div class="card">
+                <div class="card-header card-header-split">
+                    <h2 class="card-title">Spot-Preise laden</h2>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted" style="margin-bottom:1rem">
+                        Lädt alle Monate, für die Verbrauchsdaten vorhanden, aber noch keine
+                        Spotpreise importiert sind, von der Hofer&nbsp;Grünstrom-API.
+                    </p>
+                    <form id="epexForm">
+                        <button type="submit" class="btn btn-outline-success" id="epexSubmit">
+                            Fehlende Spot-Preise laden
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
 
         <section id="panel-users" class="tab-panel" role="tabpanel" aria-labelledby="tab-users">
             <?php \Erikr\Chrome\Admin\UsersTab::render([
@@ -93,6 +115,28 @@ window.CSRF = <?= json_encode($csrfToken) ?>;
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/de.js" nonce="<?= $_cspNonce ?>"></script>
 
 <script nonce="<?= $_cspNonce ?>">
+// ── App-Parameter tab: EPEX fetch ──────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const epexForm = document.getElementById('epexForm');
+    if (!epexForm) return;
+    epexForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = document.getElementById('epexSubmit');
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Lädt\u2026';
+        const fd = new FormData(epexForm);
+        const res = await adminPost('fetch-prices', Object.fromEntries(fd));
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (res.ok) {
+            showAlert(res.log || 'Spotpreise geladen.', 'success');
+        } else {
+            showAlert('Fehler: ' + (res.error || 'Unbekannt'), 'danger');
+        }
+    });
+});
+
 // ── Users tab: row actions ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     const editForm   = document.getElementById('editForm');

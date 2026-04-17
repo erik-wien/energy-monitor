@@ -13,11 +13,16 @@ header('Content-Type: application/json');
 // Accept `?action=` (Rule §15.1) as an alias for the legacy `?type=` dispatch.
 $type = $_GET['action'] ?? $_GET['type'] ?? '';
 
-// Global Y-axis maxima for consistent scale across all charts
-$max_daily_kwh  = (float)$pdo->query("SELECT MAX(consumed_kwh) FROM daily_summary")->fetchColumn();
-$max_daily_cost = (float)$pdo->query("SELECT MAX(cost_brutto)  FROM daily_summary")->fetchColumn();
-$max_slot_kwh   = (float)$pdo->query("SELECT MAX(consumed_kwh) FROM readings")->fetchColumn();
-$max_slot_cost  = (float)$pdo->query("SELECT MAX(cost_brutto)  FROM readings")->fetchColumn();
+// Y-axis maxima — only needed for chart endpoints; skip for admin/import actions
+// so that a PDOException (e.g. empty table on first deploy) can never corrupt a
+// non-chart JSON response.
+$max_daily_kwh = $max_daily_cost = $max_slot_kwh = $max_slot_cost = 0.0;
+if (in_array($type, ['daily', 'weekly', 'monthly', 'yearly'], true)) {
+    $max_daily_kwh  = (float)$pdo->query("SELECT MAX(consumed_kwh) FROM daily_summary")->fetchColumn();
+    $max_daily_cost = (float)$pdo->query("SELECT MAX(cost_brutto)  FROM daily_summary")->fetchColumn();
+    $max_slot_kwh   = (float)$pdo->query("SELECT MAX(consumed_kwh) FROM readings")->fetchColumn();
+    $max_slot_cost  = (float)$pdo->query("SELECT MAX(cost_brutto)  FROM readings")->fetchColumn();
+}
 
 // Compute per-row invoice breakdown (variable portion only; annual fees go to footer).
 // net_variable = spot + provider_surcharge + electricity_tax + renewable_tax
@@ -397,6 +402,7 @@ if ($type === 'daily') {
     ]);
 
 } elseif ($type === 'trigger-import') {
+    require_once __DIR__ . '/../inc/csv_importer.php';
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
         echo json_encode(['error' => 'Method not allowed']);
@@ -409,6 +415,9 @@ if ($type === 'daily') {
     }
     $root    = realpath(dirname(__DIR__));
     $scrapes = $root . '/scrapes';
+    $archiv  = $root . '/_Archiv';
+    if (!is_dir($scrapes)) mkdir($scrapes, 0755, true);
+    if (!is_dir($archiv))  mkdir($archiv,  0755, true);
     $files   = array_merge(
         glob($scrapes . '/*.csv')  ?: [],
         glob($scrapes . '/*.xlsx') ?: []
@@ -417,37 +426,60 @@ if ($type === 'daily') {
         echo json_encode(['ok' => true, 'count' => 0, 'rows' => 0]);
         exit;
     }
-    $script = $root . '/energie.py';
-    // Same config resolver inc/config.php uses — dev ini on /energie.test,
-    // prod ini everywhere else — so the Python import writes to the DB
-    // the web UI reads from.
-    $configPath = energie_config_path();
+    $script     = $root . '/energie.py';
+    $usePython  = file_exists($script) && function_exists('proc_open');
+
     $log      = '';
     $ok       = true;
     $imported = 0;
     $existing = 0;
     $total    = 0;
-    foreach ($files as $file) {
-        $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $configPath, 'import-csv', $file], $desc, $pipes, $root);
-        $out  = $proc ? stream_get_contents($pipes[1]) : '';
-        $err  = $proc ? stream_get_contents($pipes[2]) : '';
-        if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
-        $code = $proc ? proc_close($proc) : 1;
-        $log .= $out . ($err ? "\nSTDERR: $err" : '');
-        if ($code !== 0) { $ok = false; }
-        // "✅ Imported N new, M existing, T total consumption rows"
-        if (preg_match('/Imported (\d+) new, (\d+) existing, (\d+) total/', $out, $m)) {
-            $imported += (int) $m[1];
-            $existing += (int) $m[2];
-            $total    += (int) $m[3];
+
+    if ($usePython) {
+        // Use Python pipeline (local dev / akadbrain).
+        $configPath = energie_config_path();
+        foreach ($files as $file) {
+            $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+            $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $configPath, 'import-csv', $file], $desc, $pipes, $root);
+            $out  = $proc ? stream_get_contents($pipes[1]) : '';
+            $err  = $proc ? stream_get_contents($pipes[2]) : '';
+            if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
+            $code = $proc ? proc_close($proc) : 1;
+            $log .= $out . ($err ? "\nSTDERR: $err" : '');
+            if ($code !== 0) { $ok = false; }
+            // "✅ Imported N new, M existing, T total consumption rows"
+            if (preg_match('/Imported (\d+) new, (\d+) existing, (\d+) total/', $out, $m)) {
+                $imported += (int) $m[1];
+                $existing += (int) $m[2];
+                $total    += (int) $m[3];
+            }
+        }
+    } else {
+        // PHP-native fallback (world4you: no proc_open / no Python).
+        foreach ($files as $file) {
+            if (strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'csv') {
+                $log .= basename($file) . ": XLSX-Import nur mit Python verfügbar.\n";
+                $ok = false;
+                continue;
+            }
+            try {
+                $result    = php_import_csv($pdo, $file, $archiv);
+                $imported += $result['inserted'];
+                $existing += $result['total'] - $result['inserted'];
+                $total    += $result['total'];
+                $log      .= $result['log'];
+            } catch (Exception $e) {
+                $ok   = false;
+                $log .= basename($file) . ': Fehler: ' . $e->getMessage() . "\n";
+            }
         }
     }
+
     $count = count($files);
     if ($ok) {
-        appendLog($con, 'import', "Import OK: {$count} file(s), {$imported} new, {$existing} existing, {$total} total.");
+        appendLog($con, 'import', "Import OK: {$count} Datei(en), {$imported} neu, {$existing} vorhanden, {$total} gesamt.");
     } else {
-        appendLog($con, 'import', "Import FAILED: {$count} file(s). " . mb_substr(trim($log), 0, 400));
+        appendLog($con, 'import', "Import FAILED: {$count} Datei(en). " . mb_substr(trim($log), 0, 400));
     }
     echo json_encode([
         'ok'       => $ok,
@@ -502,12 +534,12 @@ if ($type === 'daily') {
 
     // Content check: no null bytes, no PHP open tags
     $head = file_get_contents($f['tmp_name'], false, null, 0, 512);
-    if ($head === false || str_contains($head, "\x00")) {
+    if ($head === false || strpos($head, "\x00") !== false) {
         http_response_code(400);
         echo json_encode(['error' => 'File appears to be binary, not CSV']);
         exit;
     }
-    if (str_contains(strtolower($head), '<?')) {
+    if (strpos(strtolower($head), '<?') !== false) {
         http_response_code(400);
         echo json_encode(['error' => 'File content rejected (forbidden characters)']);
         exit;
@@ -521,7 +553,12 @@ if ($type === 'daily') {
 
     $root    = realpath(dirname(__DIR__));
     $scrapes = $root . '/scrapes';
-    $dest    = $scrapes . '/' . $safeName;
+
+    if (!is_dir($scrapes)) {
+        mkdir($scrapes, 0755, true);
+    }
+
+    $dest = $scrapes . '/' . $safeName;
 
     if (file_exists($dest)) {
         http_response_code(409);
@@ -538,6 +575,63 @@ if ($type === 'daily') {
     appendLog($con, 'import', "CSV uploaded: {$safeName} (" . number_format($f['size']) . " bytes)");
     echo json_encode(['ok' => true, 'filename' => $safeName]);
 
+} elseif ($type === 'epex-preview') {
+    // Returns months that have consumption data but no spot prices yet.
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+    }
+    $rows = $pdo->query(
+        "SELECT YEAR(ts) AS y, MONTH(ts) AS m
+         FROM readings
+         WHERE consumed_kwh > 0
+         GROUP BY y, m
+         HAVING AVG(spot_ct) = 0
+         ORDER BY y, m"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    $months = [];
+    foreach ($rows as $r) {
+        $months[] = ['y' => (int)$r['y'], 'm' => (int)$r['m']];
+    }
+    echo json_encode(['ok' => true, 'months' => $months]);
+
+} elseif ($type === 'fetch-prices') {
+    require_once __DIR__ . '/../inc/epex_importer.php';
+    // Admin-only: fetch spot prices from Hofer Grünstrom API for a given year/month.
+    if (($_SESSION['rights'] ?? '') !== 'Admin') {
+        http_response_code(403); echo json_encode(['error' => 'Forbidden']); exit;
+    }
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+    }
+    // Without year+month: auto-detect all months missing spot prices.
+    $year  = (int)($_POST['year']  ?? 0);
+    $month = (int)($_POST['month'] ?? 0);
+    try {
+        if ($year === 0 && $month === 0) {
+            $result = php_fetch_missing_epex($pdo);
+            appendLog($con, 'import', sprintf('EPEX OK: %d Monat(e), %d Zeilen.', $result['months'], $result['rows']));
+            echo json_encode(['ok' => true, 'rows' => $result['rows'], 'months' => $result['months'], 'log' => $result['log']]);
+        } else {
+            if ($year < 2020 || $year > 2100 || $month < 1 || $month > 12) {
+                http_response_code(400); echo json_encode(['error' => 'Ungültige Jahr/Monat-Angabe']); exit;
+            }
+            $result = php_fetch_epex($pdo, $year, $month);
+            appendLog($con, 'import', sprintf('EPEX OK: %d-%02d, %d Zeilen.', $year, $month, $result['rows']));
+            echo json_encode(['ok' => true, 'rows' => $result['rows'], 'log' => $result['log']]);
+        }
+    } catch (Exception $e) {
+        $msg = $e->getMessage();
+        appendLog($con, 'import', 'EPEX FAILED: ' . $msg);
+        http_response_code(502);
+        echo json_encode(['ok' => false, 'error' => $msg]);
+    }
+
 } elseif ($type === 'set-theme') {
     $theme = $_POST['theme'] ?? '';
     if (!in_array($theme, ['light', 'dark', 'auto'], true)) {
@@ -552,7 +646,7 @@ if ($type === 'daily') {
     $_SESSION['theme'] = $theme;
     echo json_encode(['ok' => true]);
 
-} elseif (str_starts_with($type, 'admin_')) {
+} elseif (strpos($type, 'admin_') === 0) {
     \Erikr\Chrome\Admin\Dispatch::handle($con, $type, [
         'baseUrl' => APP_BASE_URL,
         'selfId'  => (int) ($_SESSION['id'] ?? 0),
