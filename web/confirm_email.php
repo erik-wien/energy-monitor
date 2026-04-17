@@ -53,7 +53,7 @@ if (!empty($_SESSION['id']) && (int) $_SESSION['id'] === (int) $row['id']) {
     $_SESSION['email'] = $row['pending_email'];
 }
 
-appendLog($con, 'prefs', 'Email confirmed for ' . $row['username'], 'web');
+appendLog($con, 'prefs', 'Email confirmed for ' . $row['username']);
 addAlert('success', 'Ihre E-Mail-Adresse wurde erfolgreich aktualisiert.');
 header('Location: ' . (empty($_SESSION['loggedin']) ? 'login.php' : 'preferences.php'));
 exit;

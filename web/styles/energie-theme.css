@@ -1,6 +1,7 @@
 /* energie-theme.css — Energie color palette.
    Overrides shared/theme.css variables. Dark-first (default).
-   Adds project-specific: --color-accent, --color-green, --color-blue.
+   Adds project-specific: --color-accent, --color-green, --color-blue,
+   --color-warning (notif/import marker), and chart-pill tokens.
 */
 
 :root, [data-theme="dark"] {
@@ -10,9 +11,14 @@
     --color-text:    #e2e8f0;
     --color-muted:   #718096;
     --color-border:  #2d3748;
-    --color-accent:  #e94560;
+    --color-accent:    #e94560;
+    --color-accent-fg: #ffffff;
     --color-green:   #68d391;
     --color-blue:    #63b3ed;
+    --color-warning:            #ecc94b;
+    --color-pill-cost:          #fc8181;
+    --color-pill-green-strong:  #38a169;
+    --color-pill-blue-strong:   #3182ce;
 }
 
 [data-theme="light"] {
@@ -22,9 +28,14 @@
     --color-text:    #1a202c;
     --color-muted:   #718096;
     --color-border:  #cbd5e0;
-    --color-accent:  #e94560;
+    --color-accent:    #e94560;
+    --color-accent-fg: #ffffff;
     --color-green:   #276749;
     --color-blue:    #2b6cb0;
+    --color-warning:            #b7791f;
+    --color-pill-cost:          #c53030;
+    --color-pill-green-strong:  #22543d;
+    --color-pill-blue-strong:   #1e3a8a;
 }
 
 @media (prefers-color-scheme: light) {
@@ -35,8 +46,13 @@
         --color-text:    #1a202c;
         --color-muted:   #718096;
         --color-border:  #cbd5e0;
-        --color-accent:  #e94560;
+        --color-accent:    #e94560;
+    --color-accent-fg: #ffffff;
         --color-green:   #276749;
         --color-blue:    #2b6cb0;
+        --color-warning:            #b7791f;
+        --color-pill-cost:          #c53030;
+        --color-pill-green-strong:  #22543d;
+        --color-pill-blue-strong:   #1e3a8a;
     }
 }

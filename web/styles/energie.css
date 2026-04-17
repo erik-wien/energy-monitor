@@ -9,11 +9,11 @@
 .notif-dot {
     position: absolute; top: 4px; right: 4px;
     width: 8px; height: 8px; border-radius: 50%;
-    background: #ecc94b; border: 1.5px solid var(--color-surface);
+    background: var(--color-warning); border: 1.5px solid var(--color-surface);
     pointer-events: none;
 }
 .user-btn { position: relative; }
-.dropdown-link-btn--import { color: #ecc94b; }
+.dropdown-link-btn--import { color: var(--color-warning); }
 
 /* ── Main layout ───────────────────────────────────────────────────────────── */
 
@@ -192,14 +192,14 @@ main { padding: 1.5rem 2rem; }
     box-shadow: 0 2px 0 rgba(0,0,0,0.5), 0 3px 0 color-mix(in srgb, var(--pill-color, #718096) 28%, #000);
 }
 
-.chart-pill--cost    { --pill-color: #fc8181; }
-.chart-pill--kwh     { --pill-color: #68d391; }
-.chart-pill--tariff  { --pill-color: #63b3ed; }
-.chart-pill--minmax  { --pill-color: #63b3ed; }
-.chart-pill--htariff { --pill-color: #3182ce; }
-.chart-pill--htband  { --pill-color: #3182ce; }
-.chart-pill--hkwh    { --pill-color: #38a169; }
-.chart-pill--hkband  { --pill-color: #38a169; }
+.chart-pill--cost    { --pill-color: var(--color-pill-cost); }
+.chart-pill--kwh     { --pill-color: var(--color-green); }
+.chart-pill--tariff  { --pill-color: var(--color-blue); }
+.chart-pill--minmax  { --pill-color: var(--color-blue); }
+.chart-pill--htariff { --pill-color: var(--color-pill-blue-strong); }
+.chart-pill--htband  { --pill-color: var(--color-pill-blue-strong); }
+.chart-pill--hkwh    { --pill-color: var(--color-pill-green-strong); }
+.chart-pill--hkband  { --pill-color: var(--color-pill-green-strong); }
 
 /* ── Invoice table ─────────────────────────────────────────────────────────── */
 
@@ -299,7 +299,7 @@ main { padding: 1.5rem 2rem; }
     width: 100%;
     padding: 0.65rem;
     background: var(--color-accent);
-    color: #fff;
+    color: var(--color-accent-fg);
     border: none;
     border-radius: 8px;
     font-size: 0.95rem;
@@ -381,12 +381,7 @@ main { padding: 1.5rem 2rem; }
 .input-group { display: flex; gap: 0.5rem; }
 .input-group .form-control { flex: 1; }
 
-/* ── Alerts ────────────────────────────────────────────────────────────────── */
-
-.alert { padding: 0.65rem 0.9rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; }
-.alert-danger  { background: #4a1a1a; color: #fc8181; border: 1px solid #742a2a; }
-.alert-success { background: #1a3a2a; color: #68d391; border: 1px solid #276749; }
-.alert-info    { background: #1a2a4a; color: #63b3ed; border: 1px solid #2a4a6a; }
+/* Alerts: use shared components.css — no project-level overrides. */
 
 /* ── Import confirmation dialog ─────────────────────────────────────────────── */
 

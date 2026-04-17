@@ -28,7 +28,7 @@ define('SMTP_FROM_NAME',$_cfg['smtp']['from_name']       ?? 'Energie');
 /** Energie's $con connects directly to the auth DB — no schema prefix needed. */
 define('AUTH_DB_PREFIX', '');
 
-const APP_SLUG = 'energie';
+define('APP_CODE', $_cfg['APP_CODE'] ?? 'energie');
 
 define('RATE_LIMIT_FILE', __DIR__ . '/../data/ratelimit.json');
 

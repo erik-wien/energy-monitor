@@ -50,17 +50,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $upd->bind_param('i', $userId);
                 $upd->execute();
                 $upd->close();
-                appendLog($con, 'npw', 'Failed: wrong old password for ' . ($_SESSION['username'] ?? ''), 'web');
+                appendLog($con, 'npw', 'Failed: wrong old password for ' . ($_SESSION['username'] ?? ''));
                 $errors['password'] = 'Das alte Kennwort ist falsch.';
             } else {
-                $hash = password_hash($new1, PASSWORD_BCRYPT, ['cost' => 13]);
-                $upd  = $con->prepare(
-                    'UPDATE auth_accounts SET password = ?, invalidLogins = 0 WHERE id = ?'
-                );
-                $upd->bind_param('si', $hash, $userId);
-                $upd->execute();
-                $upd->close();
-                appendLog($con, 'npw', 'Success: password changed for ' . ($_SESSION['username'] ?? ''), 'web');
+                auth_change_password($con, $userId, $new1);
                 addAlert('success', 'Kennwort erfolgreich geändert.');
                 header('Location: security.php'); exit;
             }
@@ -93,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $code = trim($_POST['totp_code'] ?? '');
             if (auth_totp_confirm($con, $userId, $setupData['secret'], $code)) {
                 unset($_SESSION['totp_setup_secret']);
-                appendLog($con, 'auth', ($_SESSION['username'] ?? '') . ' enabled 2FA.', 'web');
+                appendLog($con, 'auth', ($_SESSION['username'] ?? '') . ' enabled 2FA.');
                 addAlert('success', '2FA ist jetzt aktiv.');
                 header('Location: security.php'); exit;
             }
@@ -105,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'totp_disable') {
         auth_totp_disable($con, $userId);
         unset($_SESSION['totp_setup_secret']);
-        appendLog($con, 'auth', ($_SESSION['username'] ?? '') . ' disabled 2FA.', 'web');
+        appendLog($con, 'auth', ($_SESSION['username'] ?? '') . ' disabled 2FA.');
         addAlert('success', '2FA wurde deaktiviert.');
         header('Location: security.php'); exit;
     }

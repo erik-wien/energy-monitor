@@ -55,9 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 try {
                     send_mail($email, $row['username'], 'Kennwort zurücksetzen – Energie', $htmlBody, $textBody);
-                    appendLog($con, 'pwd_reset', 'Reset mail sent: ' . $row['username'], 'web');
+                    appendLog($con, 'pwd_reset', 'Reset mail sent: ' . $row['username']);
                 } catch (Throwable $e) {
-                    appendLog($con, 'pwd_reset', 'Reset mail failed: ' . $e->getMessage(), 'web');
+                    appendLog($con, 'pwd_reset', 'Reset mail failed: ' . $e->getMessage());
                 }
             }
 

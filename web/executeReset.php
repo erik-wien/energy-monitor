@@ -34,21 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetRow !== null) {
         } elseif ($pw1 !== $pw2) {
             $error = 'Die Kennwörter stimmen nicht überein.';
         } else {
-            $hash = password_hash($pw1, PASSWORD_BCRYPT, ['cost' => 13]);
-
-            $upd = $con->prepare(
-                'UPDATE auth_accounts SET password = ?, invalidLogins = 0 WHERE id = ?'
-            );
-            $upd->bind_param('si', $hash, $resetRow['user_id']);
-            $upd->execute();
-            $upd->close();
+            auth_change_password($con, (int) $resetRow['user_id'], $pw1);
 
             $mark = $con->prepare('UPDATE password_resets SET used = 1 WHERE id = ?');
             $mark->bind_param('i', $resetRow['id']);
             $mark->execute();
             $mark->close();
 
-            appendLog($con, 'pwd_reset', 'Password reset: ' . $resetRow['username'], 'web');
+            appendLog($con, 'pwd_reset', 'Password reset: ' . $resetRow['username']);
             addAlert('success', 'Kennwort wurde geändert. Sie können sich jetzt anmelden.');
             header('Location: login.php');
             exit;

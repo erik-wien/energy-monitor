@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $res = \Erikr\Chrome\AvatarUpload::handle($con, $userId, $_FILES['avatar'] ?? null);
         header('Content-Type: application/json; charset=utf-8');
         if ($res['ok']) {
-            appendLog($con, 'prefs', 'Avatar updated (' . $res['size'] . ' bytes).', 'web');
+            appendLog($con, 'prefs', 'Avatar updated (' . $res['size'] . ' bytes).');
             echo json_encode(['ok' => true]);
             exit;
         }
@@ -100,10 +100,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     try {
                         send_mail($newEmail, $_SESSION['username'] ?? '', 'E-Mail-Adresse bestätigen', $htmlBody, $textBody);
-                        appendLog($con, 'prefs', 'Email change requested for ' . ($_SESSION['username'] ?? ''), 'web');
+                        appendLog($con, 'prefs', 'Email change requested for ' . ($_SESSION['username'] ?? ''));
                         addAlert('info', 'Bestätigungslink wurde an die neue E-Mail-Adresse gesendet.');
                     } catch (Throwable $e) {
-                        appendLog($con, 'prefs', 'Email send failed: ' . $e->getMessage(), 'web');
+                        appendLog($con, 'prefs', 'Email send failed: ' . $e->getMessage());
                         $errors['email'] = 'Die Bestätigungs-E-Mail konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.';
                     }
 
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd->close();
             $_SESSION['theme'] = $t;
             $theme = $t;
-            appendLog($con, 'prefs', 'Theme set to ' . $t, 'web');
+            appendLog($con, 'prefs', 'Theme set to ' . $t);
             addAlert('success', 'Design gespeichert.');
             header('Location: preferences.php'); exit;
         }
