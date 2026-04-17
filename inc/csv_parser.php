@@ -30,7 +30,7 @@ function _parse_energie_csv_timestamps(string $path): array {
     if ($vIdx === false) $vIdx = array_search('von', $headers, true);
     $kIdx = null;
     foreach ($headers as $i => $h) {
-        if (str_contains($h, 'Verbrauch') || str_contains($h, 'kWh')) { $kIdx = $i; break; }
+        if (strpos($h, 'Verbrauch') !== false || strpos($h, 'kWh') !== false) { $kIdx = $i; break; }
     }
     if ($dIdx === false || $vIdx === false || $kIdx === null) { fclose($handle); return []; }
     $timestamps = [];

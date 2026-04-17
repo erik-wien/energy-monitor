@@ -146,7 +146,10 @@ $rsyncExcludes = [
 ];
 
 echo "Rsyncing to {$sshTarget}:{$remoteBase} ...\n";
-$rsyncCmd = ['rsync', '-avz', '--delete', '--delete-excluded', '--copy-links'];
+// --delete removes extraneous files on remote. Without --delete-excluded, rsync
+// leaves excluded paths alone — which is what we want for runtime directories
+// like scrapes/, _Archiv/, data/ that exist only on the server.
+$rsyncCmd = ['rsync', '-avz', '--delete', '--copy-links'];
 foreach ($rsyncExcludes as $p) {
     $rsyncCmd[] = '--exclude=' . $p;
 }

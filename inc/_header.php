@@ -74,6 +74,10 @@ if ($_import_count > 0) {
         <span class="label">Neu</span>
         <span class="value new" id="imp-new">…</span>
     </div>
+    <div id="imp-epex-section" style="display:none;margin-top:1rem">
+        <p id="imp-epex-label" style="font-size:.85rem;color:var(--color-text-muted);margin:0 0 .4rem"></p>
+        <progress id="imp-epex-bar" style="width:100%" value="0" max="1"></progress>
+    </div>
     <div class="import-dialog-btns">
         <button class="btn" id="imp-cancel">Abbrechen</button>
         <button class="btn btn-outline-success" id="imp-confirm">Importieren</button>
@@ -84,6 +88,7 @@ if ($_import_count > 0) {
 (function() {
     const apiBase   = <?= json_encode($base) ?>;
     const csrfToken = <?= json_encode(csrf_token()) ?>;
+    const isAdmin   = <?= json_encode(($_SESSION['rights'] ?? '') === 'Admin') ?>;
 
     // Import status toast (shown after page reload)
     const _stored = sessionStorage.getItem('importResult');
@@ -94,17 +99,21 @@ if ($_import_count > 0) {
             const _el = document.createElement('div');
             _el.className = 'alert ' + (_r.ok ? 'alert-success' : 'alert-danger');
             _el.style.cssText = 'margin:0.75rem 1.5rem;';
-            _el.textContent = _r.ok
-                ? (typeof _r.imported === 'number'
-                    ? `Import abgeschlossen: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
-                    : (_r.log || 'OK').trim().slice(0, 200))
-                : `Import fehlgeschlagen: ${(_r.log || _r.error || 'Unbekannter Fehler').trim().slice(0, 200)}`;
+            if (_r.ok) {
+                let msg = typeof _r.imported === 'number'
+                    ? `Import: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
+                    : (_r.log || 'OK').trim().slice(0, 200);
+                if (_r.epexMonths) msg += ` Spot-Preise: ${_r.epexMonths} Monat(e) geladen.`;
+                _el.textContent = msg;
+            } else {
+                _el.textContent = `Import fehlgeschlagen: ${(_r.log || _r.error || 'Unbekannter Fehler').trim().slice(0, 200)}`;
+            }
             document.querySelector('.app-header')?.insertAdjacentElement('afterend', _el);
             setTimeout(() => _el.remove(), 8000);
         } catch (_) {}
     }
 
-    // Import trigger — 2-step: preview → dialog → import
+    // Import trigger — 2-step: preview → dialog → import → auto EPEX fetch
     const importBtn    = document.getElementById('import-trigger');
     const importDialog = document.getElementById('import-dialog');
     if (importBtn && importDialog) {
@@ -113,19 +122,69 @@ if ($_import_count > 0) {
         const impNew      = document.getElementById('imp-new');
         const impCancel   = document.getElementById('imp-cancel');
         const impConfirm  = document.getElementById('imp-confirm');
+        const impEpexSect = document.getElementById('imp-epex-section');
+        const impEpexBar  = document.getElementById('imp-epex-bar');
+        const impEpexLbl  = document.getElementById('imp-epex-label');
         const importLabel = importBtn.textContent;
 
-        function _runImport() {
-            impConfirm.disabled    = true;
-            impConfirm.textContent = 'Importiere\u2026';
-            fetch(apiBase + '/api.php?type=trigger-import', {
+        function _post(type, extra) {
+            let body = 'csrf_token=' + encodeURIComponent(csrfToken);
+            if (extra) body += '&' + extra;
+            return fetch(apiBase + '/api.php?type=' + type, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'csrf_token=' + encodeURIComponent(csrfToken),
-            })
-                .then(r => r.json())
-                .then(d => { importDialog.close(); sessionStorage.setItem('importResult', JSON.stringify(d)); location.reload(); })
-                .catch(() => { importDialog.close(); sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: 'Netzwerkfehler' })); location.reload(); });
+                body,
+            }).then(r => r.json());
+        }
+
+        async function _fetchEpexWithProgress() {
+            const preview = await _post('epex-preview');
+            if (!preview.ok || !preview.months || !preview.months.length) return {};
+            const months = preview.months;
+            // Show progress bar only when there are multiple months to fetch.
+            if (months.length > 1) {
+                impEpexSect.style.display = '';
+                impEpexBar.max   = months.length;
+                impEpexBar.value = 0;
+                impEpexLbl.textContent = 'Spot-Preise: 0\u00a0/\u00a0' + months.length + ' Monate';
+            } else {
+                impEpexSect.style.display = '';
+                impEpexLbl.textContent = 'Lade Spot-Preise\u2026';
+            }
+            let epexRows = 0;
+            for (let i = 0; i < months.length; i++) {
+                const { y, m } = months[i];
+                try {
+                    const d = await _post('fetch-prices', 'year=' + y + '&month=' + m);
+                    epexRows += d.rows || 0;
+                } catch (_) {}
+                if (months.length > 1) {
+                    impEpexBar.value = i + 1;
+                    impEpexLbl.textContent = 'Spot-Preise: ' + (i + 1) + '\u00a0/\u00a0' + months.length + ' Monate';
+                }
+            }
+            return { epexMonths: months.length, epexRows };
+        }
+
+        async function _runImport() {
+            impConfirm.disabled = true;
+            impCancel.disabled  = true;
+            impConfirm.textContent = 'Importiere\u2026';
+            let result;
+            try {
+                result = await _post('trigger-import');
+            } catch (_) {
+                result = { ok: false, error: 'Netzwerkfehler' };
+            }
+            if (result.ok && isAdmin) {
+                try {
+                    const epex = await _fetchEpexWithProgress();
+                    result = Object.assign({}, result, epex);
+                } catch (_) {}
+            }
+            importDialog.close();
+            sessionStorage.setItem('importResult', JSON.stringify(result));
+            location.reload();
         }
 
         importBtn.addEventListener('click', e => {
@@ -184,7 +243,13 @@ if ($_import_count > 0) {
             fd.append('file', file);
             fd.append('csrf_token', csrfToken);
             fetch(apiBase + '/api.php?type=upload-csv', { method: 'POST', body: fd })
-                .then(r => r.json())
+                .then(r => {
+                    // If HTTP status is success, parse JSON for error details but
+                    // treat a parse failure as success — the file was saved even if
+                    // the server prepended non-JSON output (e.g. WAF decoration).
+                    if (r.ok) return r.json().catch(() => ({ ok: true }));
+                    return r.json().catch(() => ({ error: 'Upload fehlgeschlagen (HTTP ' + r.status + ')' }));
+                })
                 .then(d => {
                     if (d.ok) {
                         sessionStorage.setItem('autoPreview', '1');
