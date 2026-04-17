@@ -17,11 +17,11 @@
 
 /* ── Main layout ───────────────────────────────────────────────────────────── */
 
-/* .app-header and .app-footer are position: fixed — reserve space so content
-   isn't hidden beneath them (UI rule §12/§13). Header ≈ 60px, footer ≈ 32px. */
+/* .app-header and .app-footer are position: fixed — reserve space via the
+   custom properties declared on :root in shared layout.css (rule §12/§12a/§13). */
 body {
-    padding-top: 60px;
-    padding-bottom: 48px;
+    padding-top:    var(--app-header-height);
+    padding-bottom: var(--app-footer-height);
 }
 
 /* Rule §13: three-column footer (Impressum | © | Version). */
