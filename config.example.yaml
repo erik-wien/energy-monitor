@@ -16,7 +16,7 @@ deploy:
 auth_db:
   host: localhost
   socket: /tmp/mysql.sock
-  name: jardyx_auth
+  name: auth
   user: wlmonitor
   password: your_password
 slack:

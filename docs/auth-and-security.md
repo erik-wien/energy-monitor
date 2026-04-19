@@ -6,7 +6,7 @@ Every page request opens two separate database connections with different purpos
 
 | Variable | Type | Database | Used for |
 |---|---|---|---|
-| `$con` | MySQLi | `jardyx_auth` | Auth operations: login, session, avatar, email, password |
+| `$con` | MySQLi | `auth` | Auth operations: login, session, avatar, email, password |
 | `$pdo` | PDO | `energie` or `energie_dev` | All data queries: readings, daily_summary, tariff_config |
 
 **Why two connections?** The auth library (`erikr/auth`) was designed as a shared library across multiple projects — it always connects to its own dedicated database. Energie's data lives in a separate DB with a separate user. This means a credential leak on the app DB does not expose auth data, and the auth schema never mixes with application tables.
@@ -38,7 +38,7 @@ require_once 'inc/db.php'
        │    SMTP credentials live in /opt/homebrew/etc/jardyx-mail.ini
        │    read by the erikr/auth mailer — not per app)
        │
-       ├─ parse config again → open MySQLi $con (jardyx_auth DB)
+       ├─ parse config again → open MySQLi $con (auth DB)
        │
        └─ auth_bootstrap()
             ├─ session_start() + session_regenerate() on stale tokens

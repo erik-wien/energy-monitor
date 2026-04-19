@@ -77,7 +77,7 @@ Energie/
 │   ├── avatar.php          Serves profile picture from DB blob
 │   ├── confirm_email.php   Email change confirmation
 │   ├── styles/
-│   │   ├── shared/         Symlink → ~/Git/css (shared CSS library)
+│   │   ├── shared/         Symlink → ~/Git/css_library (shared CSS library)
 │   │   ├── energie-theme.css  Energie color palette (--color-* overrides)
 │   │   └── energie.css     App-specific styles (header, tiles, charts, etc.)
 │   └── img/                Favicons, logo
@@ -127,7 +127,7 @@ database = energie
 host     = localhost
 user     = …
 password = …
-database = jardyx_auth     ; shared auth DB
+database = auth     ; shared auth DB
 
 [smtp]
 host = …   port = 587   user = …   password = …

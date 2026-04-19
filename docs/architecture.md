@@ -121,7 +121,7 @@ Energie/
 │   ├── avatar.php          Serves profile image from DB blob
 │   ├── confirm_email.php   Email change confirmation handler
 │   ├── styles/
-│   │   ├── shared/         → ~/Git/css (shared CSS library symlink)
+│   │   ├── shared/         → ~/Git/css_library (shared CSS library symlink)
 │   │   ├── energie-theme.css  Project color palette overrides
 │   │   └── energie.css     App-specific styles
 │   └── img/                Static assets (favicon, SVG logo)
@@ -154,7 +154,7 @@ A complete round-trip for a daily drilldown page:
          → parse ini → define APP_BASE_URL, APP_NAME, APP_SUPPORT_EMAIL
            (SMTP creds live in /opt/homebrew/etc/jardyx-mail.ini,
             read by the erikr/auth mailer)
-         → open MySQLi $con → jardyx_auth DB
+         → open MySQLi $con → auth DB
          → auth_bootstrap()
              → emit Content-Security-Policy (nonce), HSTS, X-Frame-Options
              → session_start()

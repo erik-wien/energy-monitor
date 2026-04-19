@@ -67,8 +67,9 @@ $remembered = htmlspecialchars($_COOKIE['energie_username'] ?? '', ENT_QUOTES, '
             </div>
             <div class="form-check">
                 <input type="checkbox" id="remember_me" name="remember_me" value="1">
-                <label for="remember_me">Angemeldet bleiben (8&nbsp;Tage)</label>
+                <label for="remember_me">Angemeldet bleiben (<?= (int) (AUTH_REMEMBER_LIFETIME / 86400) ?>&nbsp;Tage)</label>
             </div>
+            <p class="form-text">Meldet Sie auch auf den anderen Apps auf eriks.cloud an.</p>
             <button type="submit" class="btn-login">Anmelden</button>
         </form>
         <div class="login-links">

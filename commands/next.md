@@ -1,0 +1,1 @@
+List all open tasks from the local backlog with status "To Do", sorted by priority (high first), excluding any tasks that have unresolved blockers. Show task ID, title, priority, and dependencies. Recommend which single task to work on next and explain why.

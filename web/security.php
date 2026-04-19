@@ -102,7 +102,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         addAlert('success', '2FA wurde deaktiviert.');
         header('Location: security.php'); exit;
     }
+
+    // ── Revoke all remember-me tokens ─────────────────────────────────────────
+    if ($action === 'revoke_all_devices') {
+        if (auth_remember_revoke_all($con)) {
+            addAlert('success', 'Alle Sitzungen wurden beendet.');
+        } else {
+            addAlert('danger', 'Konnte Sitzungen nicht beenden.');
+        }
+        header('Location: security.php'); exit;
+    }
+
+    // ── Revoke a single remember-me token ─────────────────────────────────────
+    if ($action === 'revoke_one_device') {
+        $selector = (string) ($_POST['selector'] ?? '');
+        if (auth_remember_revoke_one($con, $userId, $selector)) {
+            addAlert('success', 'Sitzung wurde beendet.');
+        } else {
+            addAlert('danger', 'Konnte Sitzung nicht beenden.');
+        }
+        header('Location: security.php'); exit;
+    }
 }
+
+$sessions = auth_remember_list_for_user($con, $userId);
 
 // ── Prepare QR code for in-progress 2FA enrollment ────────────────────────────
 $setupSecret = null;
@@ -145,7 +168,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
 </head>
 <body>
 <?php $page_type = 'security'; require __DIR__ . '/../inc/_header.php'; ?>
-<main>
+<main id="main-content">
     <div class="pref-section">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>
@@ -236,6 +259,65 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
                         <button type="submit" class="btn btn-outline-success">2FA aktivieren</button>
                     </form>
                 <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Aktive Sitzungen -->
+        <div class="pref-card">
+            <div class="pref-card-hdr">Aktive Sitzungen</div>
+            <div class="pref-card-body">
+                <?php if (!empty($sessions)): ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Gerät</th>
+                                    <th>IP</th>
+                                    <th>Ausgestellt</th>
+                                    <th>Läuft ab</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($sessions as $s): ?>
+                                    <tr<?= $s['is_current'] ? ' class="is-current"' : '' ?>>
+                                        <td>
+                                            <?= htmlspecialchars($s['browser_os'], ENT_QUOTES, 'UTF-8') ?>
+                                            <?php if ($s['user_agent'] !== ''): ?>
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" class="icon-info-circle" tabindex="0" role="img"><title><?= htmlspecialchars($s['user_agent'], ENT_QUOTES, 'UTF-8') ?></title><circle cx="8" cy="8" r="7" fill="currentColor"/><text x="8" y="12" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="11" font-weight="bold" font-style="italic" fill="#fff">i</text></svg>
+                                            <?php endif; ?>
+                                            <?php if ($s['is_current']): ?>
+                                                <span class="badge badge-info">Diese Sitzung</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><code><?= htmlspecialchars($s['ip'], ENT_QUOTES, 'UTF-8') ?></code></td>
+                                        <td><?= htmlspecialchars(substr($s['created_at'], 0, 16), ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= htmlspecialchars(substr($s['expires_at'], 0, 16), ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td>
+                                            <form method="post" action="security.php"
+                                                  <?= $s['is_current'] ? 'onsubmit="return confirm(\'Das ist Ihre aktuelle Sitzung. Wirklich abmelden?\')"' : '' ?>>
+                                                <?= csrf_input() ?>
+                                                <input type="hidden" name="action" value="revoke_one_device">
+                                                <input type="hidden" name="selector" value="<?= htmlspecialchars($s['selector'], ENT_QUOTES, 'UTF-8') ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">Abmelden</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+                <p class="text-muted small">
+                    Aktive Sitzungen auf anderen Apps bleiben bis zu 4 Tage bestehen;
+                    um sie sofort zu beenden, ändern Sie Ihr Kennwort.
+                </p>
+                <form method="post" action="security.php"
+                      onsubmit="return confirm('Wirklich von allen Geräten abmelden?')">
+                    <?= csrf_input() ?>
+                    <input type="hidden" name="action" value="revoke_all_devices">
+                    <button type="submit" class="btn btn-outline-danger">Von allen Geräten abmelden</button>
+                </form>
             </div>
         </div>
 

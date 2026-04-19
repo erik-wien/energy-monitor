@@ -122,6 +122,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // ── Revoke all remember-me tokens ─────────────────────────────────────────
+    if ($action === 'revoke_all_devices') {
+        if (auth_remember_revoke_all($con)) {
+            addAlert('success', 'Alle Sitzungen wurden beendet.');
+        } else {
+            addAlert('danger', 'Konnte Sitzungen nicht beenden.');
+        }
+        header('Location: preferences.php#sicherheit'); exit;
+    }
+
 }
 ?>
 <!DOCTYPE html>
@@ -145,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 <?php $page_type = 'preferences'; require __DIR__ . '/../inc/_header.php'; ?>
-<main>
+<main id="main-content">
     <div class="pref-section">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>
@@ -169,6 +179,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="button" class="tab-btn<?= $activeTab === 'theme' ? ' active' : '' ?>"
                     id="tab-theme" role="tab" aria-controls="panel-theme"
                     aria-selected="<?= $activeTab === 'theme' ? 'true' : 'false' ?>" data-tab="theme">Design</button>
+            <button type="button" class="tab-btn<?= $activeTab === 'sicherheit' ? ' active' : '' ?>"
+                    id="tab-sicherheit" role="tab" aria-controls="panel-sicherheit"
+                    aria-selected="<?= $activeTab === 'sicherheit' ? 'true' : 'false' ?>" data-tab="sicherheit">Sicherheit</button>
         </nav>
 
         <section id="panel-avatar" class="tab-panel<?= $activeTab !== 'avatar' ? ' hidden' : '' ?>"
@@ -279,6 +292,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label for="th_dark">🌙 Dunkel</label>
                         </div>
                         <button class="btn btn-outline-success" type="submit">Speichern</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <section id="panel-sicherheit" class="tab-panel<?= $activeTab !== 'sicherheit' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-sicherheit"<?= $activeTab !== 'sicherheit' ? ' hidden' : '' ?>>
+            <div class="pref-card">
+                <div class="pref-card-hdr">Aktive Sitzungen</div>
+                <div class="pref-card-body">
+                    <p>Meldet Sie auf allen Geräten und allen Apps auf eriks.cloud ab.</p>
+                    <p class="text-muted small">Aktive Sitzungen auf anderen Apps bleiben bis zu 4 Tage bestehen;
+                        um sie sofort zu beenden, ändern Sie Ihr Kennwort.</p>
+                    <form method="post" action="preferences.php"
+                          onsubmit="return confirm('Wirklich von allen Geräten abmelden?')">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="revoke_all_devices">
+                        <button type="submit" class="btn btn-outline-danger">Von allen Geräten abmelden</button>
                     </form>
                 </div>
             </div>

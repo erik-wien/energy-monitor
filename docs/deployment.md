@@ -54,7 +54,7 @@ database = energie       ; or energie_dev
 host     = localhost
 user     = …
 password = …
-database = jardyx_auth
+database = auth
 
 [app]
 name          = Energie

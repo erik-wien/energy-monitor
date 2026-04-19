@@ -8,7 +8,7 @@ Two databases are used:
 |---|---|---|
 | `energie` | production | All application data |
 | `energie_dev` | development | Mirror of production, refreshed on deploy |
-| `jardyx_auth` | shared | User accounts, managed by `erikr/auth` library |
+| `auth` | shared | User accounts, managed by `erikr/auth` library |
 
 The `energie` user has `SELECT, INSERT, UPDATE` on `energie.*` and `ALL` on `energie_dev.*`. The auth database is accessed by a separate user defined in `[auth]` config.
 
@@ -76,7 +76,7 @@ Tariff lookup: `SELECT * FROM tariff_config WHERE valid_from <= :date ORDER BY v
 | 2026-01-01 | 1.90 | 0.10 | 0.796 | 4.695 | 19.02 | 6% | 20% |
 | 2026-03-01 | 1.90 | 0.10 | 0.796 | 4.695 | 19.02 | 7% | 20% |
 
-### `auth_accounts` (jardyx_auth)
+### `auth_accounts` (auth)
 
 Managed by the `erikr/auth` library. Energie does not write to this table except via the auth library's own functions and the `preferences.php` avatar/email/password handlers.
 

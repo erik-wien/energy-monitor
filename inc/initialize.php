@@ -51,7 +51,7 @@ auth_bootstrap([
 // ── Cross-DB cleanup hooks for admin_delete_user() ────────────────────────────
 //
 // en_preferences lives in the Energie data DB ($pdo), while auth_accounts lives
-// in jardyx_auth ($con). On local/akadbrain these are different DBs; on
+// in auth ($con). On local/akadbrain these are different DBs; on
 // world4you they happen to collide in one DB. Either way, we cannot rely on
 // FK ON DELETE CASCADE across DBs, so register a cleanup hook that runs
 // inside admin_delete_user()'s DELETE transaction.

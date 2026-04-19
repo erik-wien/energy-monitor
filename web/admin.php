@@ -48,7 +48,7 @@ $pageUrl = static function (int $p, string $f): string {
 </head>
 <body>
 <?php $page_type = 'admin'; require __DIR__ . '/../inc/_header.php'; ?>
-<main>
+<main id="main-content">
     <div class="admin-section">
 
         <div id="adminAlerts"></div>
