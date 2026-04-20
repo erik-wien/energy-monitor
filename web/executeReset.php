@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetRow !== null) {
             $error = 'Die Kennwörter stimmen nicht überein.';
         } else {
             auth_change_password($con, (int) $resetRow['user_id'], $pw1);
+            auth_clear_auto_blacklist_ip($con, getUserIpAddr());
 
             $mark = $con->prepare('UPDATE password_resets SET used = 1 WHERE id = ?');
             $mark->bind_param('i', $resetRow['id']);
