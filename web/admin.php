@@ -39,6 +39,8 @@ $pageUrl = static function (int $p, string $f): string {
     <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/flatpickr-overrides.css">
+    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">

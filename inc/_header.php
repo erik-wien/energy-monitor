@@ -59,7 +59,7 @@ if ($_import_count > 0) {
     'pageType'      => $page_type ?? '',
     'appMenu'       => $_appMenu,
     'extraItems'    => $_extras,
-    'brandLogoSrc'  => $base . '/assets/jardyx.svg',
+    'brandLogoSrc'  => $base . '/jardyx-logo.svg',
     'themeEndpoint' => $base . '/preferences.php',
 ]);
 ?>

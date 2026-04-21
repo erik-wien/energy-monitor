@@ -61,6 +61,8 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
     <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
+    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">

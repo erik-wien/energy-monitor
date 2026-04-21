@@ -16,6 +16,7 @@ $_cfg = energie_load_config();
 define('APP_BASE_URL',      rtrim($_cfg['app']['base_url']       ?? '', '/'));
 define('APP_NAME',          $_cfg['app']['name']                 ?? 'Energie');
 define('APP_SUPPORT_EMAIL', $_cfg['app']['support_email']        ?? 'contact@eriks.cloud');
+define('APP_COLOR',         $_cfg['app']['color']                ?? '#e2001a');
 define('APP_VERSION',       '1.1');
 define('APP_BUILD',         1);
 define('APP_ENV',           $_cfg['app']['env']                  ?? 'dev');

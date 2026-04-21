@@ -14,6 +14,8 @@ $_b = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
     <link rel="stylesheet" href="<?= $_b ?>/styles/shared/components.css">
     <link rel="stylesheet" href="<?= $_b ?>/styles/energie-theme.css">
     <link rel="stylesheet" href="<?= $_b ?>/styles/energie.css">
+    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= $_b ?>/jardyx-favicon.svg">
     <link rel="icon" type="image/x-icon" href="<?= $_b ?>/assets/favicon.ico">
 </head>
 <body>
