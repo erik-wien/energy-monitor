@@ -170,7 +170,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
 </head>
 <body>
 <?php $page_type = 'security'; require __DIR__ . '/../inc/_header.php'; ?>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
     <div class="pref-section">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>

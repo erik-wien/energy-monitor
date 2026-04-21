@@ -28,20 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
 
             if ($row) {
-                $del = $con->prepare('DELETE FROM password_resets WHERE user_id = ?');
-                $del->bind_param('i', $row['id']);
-                $del->execute();
-                $del->close();
-
-                $token     = bin2hex(random_bytes(32));
-                $expiresAt = date('Y-m-d H:i:s', time() + 3600);
-
-                $ins = $con->prepare(
-                    'INSERT INTO password_resets (user_id, token, expires_at) VALUES (?, ?, ?)'
-                );
-                $ins->bind_param('iss', $row['id'], $token, $expiresAt);
-                $ins->execute();
-                $ins->close();
+                $token = auth_reset_token_issue($con, (int) $row['id'])['token'];
 
                 $resetUrl = APP_BASE_URL . '/executeReset.php?token=' . urlencode($token);
                 if (mail_send_password_reset($email, $row['username'], $resetUrl)) {

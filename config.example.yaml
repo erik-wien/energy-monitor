@@ -25,6 +25,7 @@ slack:
 app:
   name: Energie
   support_email: contact@eriks.cloud
+  color: '#d6a733'
   base_url: http://energie.test
 APP_CODE: energie
 hofer:

@@ -27,7 +27,7 @@ $uname = htmlspecialchars($_SESSION['username'] ?? '', ENT_QUOTES, 'UTF-8');
 </head>
 <body>
 <?php $page_type = 'help'; require __DIR__ . '/../inc/_header.php'; ?>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
     <div class="pref-section">
 
         <div class="pref-card">

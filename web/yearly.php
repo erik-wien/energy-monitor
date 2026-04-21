@@ -73,7 +73,7 @@ function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
 </head>
 <body>
 <?php require __DIR__ . '/../inc/_header.php'; ?>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
     <div class="nav-bar">
         <a href="<?= htmlspecialchars($prev_url) ?>">← <?= htmlspecialchars($prev_label) ?></a>
         <div class="period-nav">

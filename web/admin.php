@@ -50,7 +50,7 @@ $pageUrl = static function (int $p, string $f): string {
 </head>
 <body>
 <?php $page_type = 'admin'; require __DIR__ . '/../inc/_header.php'; ?>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
     <div class="admin-section">
 
         <div id="adminAlerts"></div>

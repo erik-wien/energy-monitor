@@ -28,7 +28,7 @@ $_b = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
     </div>
     <div class="header-right"></div>
 </header>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
 <div class="page-reading">
     <h1>Impressum</h1>
     <p>

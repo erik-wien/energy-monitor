@@ -61,7 +61,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 </head>
 <body>
 <?php $page_type = 'index'; require __DIR__ . '/../inc/_header.php'; ?>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
     <div class="tiles">
 
         <a class="tile" href="<?= $base ?>/daily.php?date=<?= htmlspecialchars($latest) ?>">

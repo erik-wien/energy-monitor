@@ -79,13 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($taken) {
                     $errors['email'] = 'Diese E-Mail-Adresse ist bereits vergeben.';
                 } else {
-                    $code = bin2hex(random_bytes(32));
-                    $upd  = $con->prepare(
-                        'UPDATE auth_accounts SET pending_email = ?, email_change_code = ? WHERE id = ?'
-                    );
-                    $upd->bind_param('ssi', $newEmail, $code, $userId);
-                    $upd->execute();
-                    $upd->close();
+                    $code = auth_email_confirmation_issue($con, $userId, $newEmail)['token'];
 
                     $confirmUrl = APP_BASE_URL . '/confirm_email.php?code=' . urlencode($code);
                     if (mail_send_email_change_confirmation($newEmail, $_SESSION['username'] ?? '', $confirmUrl)) {
@@ -157,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 <?php $page_type = 'preferences'; require __DIR__ . '/../inc/_header.php'; ?>
-<main id="main-content">
+<main id="main-content" tabindex="-1">
     <div class="pref-section">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>
