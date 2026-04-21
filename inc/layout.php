@@ -1,69 +1,114 @@
 <?php
-// _header.php — thin adapter for \Erikr\Chrome\Header.
-//
-// Expected vars from including page:
-//   $base       URL prefix (e.g. '/energie.test'), defined by inc/db.php
-//   $page_type  'daily' | 'weekly' | 'monthly' | 'yearly' | 'index'
-//               | 'preferences' | 'security' | 'help' | 'admin'
-//   $pdo        PDO handle to the data DB (used for nav-target lookup)
-//   $_cspNonce  set by auth_bootstrap()
+/**
+ * inc/layout.php — page shell for every Energie page.
+ *
+ * render_page_head()  emits <!DOCTYPE>…</head><body>
+ * render_header()     emits the shared Chrome header (§12) + import toolbar
+ * render_footer()     emits the shared Chrome footer (§13) + </body></html>
+ * render_anon_header() head + Chrome header (loggedIn=false) + <main> for pre-auth pages
+ *
+ * Expected globals (set by inc/db.php or inc/initialize.php):
+ *   $base, $_cspNonce, $pdo  (pdo only for render_header())
+ */
 
-// ── App-specific nav targets ──────────────────────────────────────────────────
+use Erikr\Chrome\Header;
+use Erikr\Chrome\Footer;
 
-$_stmt_latest     = $pdo->query("SELECT MAX(day) AS d FROM daily_summary WHERE consumed_kwh > 0");
-$_nav_today       = ($_stmt_latest->fetchColumn()) ?: date('Y-m-d');
-$_nav_week_year   = (int) date('o');
-$_nav_week_num    = (int) date('W');
-$_nav_month_year  = (int) date('Y');
-$_nav_month_month = (int) date('n');
-
-$_appMenu = [
-    ['type' => 'daily',   'label' => 'Aktuell',
-     'href' => 'daily.php?date=' . $_nav_today],
-    ['type' => 'weekly',  'label' => 'Woche',
-     'href' => 'weekly.php?year=' . $_nav_week_year . '&week=' . $_nav_week_num],
-    ['type' => 'monthly', 'label' => 'Monat',
-     'href' => 'monthly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
-    ['type' => 'yearly',  'label' => 'Jahr',
-     'href' => 'yearly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
-];
-
-// ── Import / CSV upload dropdown extras ───────────────────────────────────────
-
-$_scrapes_dir  = dirname(__DIR__) . '/scrapes';
-$_import_count = count(array_merge(
-    glob($_scrapes_dir . '/*.csv')  ?: [],
-    glob($_scrapes_dir . '/*.xlsx') ?: []
-));
-$_isAdmin = (($_SESSION['rights'] ?? '') === 'Admin');
-
-$_extras = [];
-if ($_import_count > 0) {
-    $_extras[] = '<button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger" type="button">'
-               . 'Importieren (' . $_import_count . ')'
-               . '</button>';
-} elseif ($_isAdmin) {
-    $_extras[] = '<label class="dropdown-link-btn" style="cursor:pointer" for="csv-upload-input" id="upload-label">'
-               . 'CSV hochladen'
-               . '</label>'
-               . '<input type="file" id="csv-upload-input" accept=".csv" style="display:none">';
+/**
+ * Emits <!DOCTYPE>, <html>, <head>, and <body> open tag.
+ * $extraHead is optional raw HTML injected before </head> (e.g. CDN scripts).
+ */
+function render_page_head(string $title, string $extraHead = ''): void
+{
+    global $base;
+    $pageTitle = htmlspecialchars($title . ' · Energie', ENT_QUOTES, 'UTF-8');
+    ?>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $pageTitle ?></title>
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/theme.css">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/reset.css">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/layout.css">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/components.css">
+    <link rel="stylesheet" href="<?= $base ?>/css/energie-theme.css">
+    <link rel="stylesheet" href="<?= $base ?>/css/energie.css">
+    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
+    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
+    <link rel="apple-touch-icon" href="<?= $base ?>/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
+    <?php if ($extraHead !== '') echo $extraHead; ?>
+</head>
+<body>
+    <?php
 }
 
-// ── Render shared header ──────────────────────────────────────────────────────
+/**
+ * Emits the authenticated app header: nav menu, import toolbar, Chrome §12 header.
+ * Requires $pdo (set by inc/db.php) for nav-target lookup.
+ */
+function render_header(string $page_type): void
+{
+    global $base, $pdo, $_cspNonce;
 
-\Erikr\Chrome\Header::render([
-    'appName'       => 'Energie',
-    'base'          => $base,
-    'cspNonce'      => $_cspNonce ?? '',
-    'csrfToken'     => function_exists('csrf_token') ? csrf_token() : '',
-    'pageType'      => $page_type ?? '',
-    'appMenu'       => $_appMenu,
-    'extraItems'    => $_extras,
-    'brandLogoSrc'  => $base . '/jardyx-logo.svg',
-    'themeEndpoint' => $base . '/preferences.php',
-]);
-?>
-<?php if ($_import_count > 0): ?>
+    // Nav targets — latest data day for Aktuell, current ISO week/month for others.
+    $_stmt_latest     = $pdo->query("SELECT MAX(day) AS d FROM daily_summary WHERE consumed_kwh > 0");
+    $_nav_today       = ($_stmt_latest->fetchColumn()) ?: date('Y-m-d');
+    $_nav_week_year   = (int) date('o');
+    $_nav_week_num    = (int) date('W');
+    $_nav_month_year  = (int) date('Y');
+    $_nav_month_month = (int) date('n');
+
+    $_appMenu = [
+        ['type' => 'daily',   'label' => 'Aktuell',
+         'href' => 'daily.php?date=' . $_nav_today],
+        ['type' => 'weekly',  'label' => 'Woche',
+         'href' => 'weekly.php?year=' . $_nav_week_year . '&week=' . $_nav_week_num],
+        ['type' => 'monthly', 'label' => 'Monat',
+         'href' => 'monthly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
+        ['type' => 'yearly',  'label' => 'Jahr',
+         'href' => 'yearly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
+    ];
+
+    // Import toolbar — shown when CSVs are waiting or when admin can upload.
+    $_scrapes_dir  = dirname(__DIR__) . '/scrapes';
+    $_import_count = count(array_merge(
+        glob($_scrapes_dir . '/*.csv')  ?: [],
+        glob($_scrapes_dir . '/*.xlsx') ?: []
+    ));
+    $_isAdmin = (($_SESSION['rights'] ?? '') === 'Admin');
+
+    $_extras = [];
+    if ($_import_count > 0) {
+        $_extras[] = '<button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger" type="button">'
+                   . 'Importieren (' . $_import_count . ')'
+                   . '</button>';
+    } elseif ($_isAdmin) {
+        $_extras[] = '<label class="dropdown-link-btn" style="cursor:pointer" for="csv-upload-input" id="upload-label">'
+                   . 'CSV hochladen'
+                   . '</label>'
+                   . '<input type="file" id="csv-upload-input" accept=".csv" style="display:none">';
+    }
+
+    Header::render([
+        'appName'       => 'Energie',
+        'base'          => $base,
+        'cspNonce'      => $_cspNonce ?? '',
+        'csrfToken'     => function_exists('csrf_token') ? csrf_token() : '',
+        'pageType'      => $page_type,
+        'appMenu'       => $_appMenu,
+        'extraItems'    => $_extras,
+        'brandLogoSrc'  => $base . '/jardyx-logo.svg',
+        'themeEndpoint' => $base . '/preferences.php',
+    ]);
+
+    if ($_import_count > 0): ?>
 <dialog id="import-dialog">
     <h3>Import-Vorschau</h3>
     <div class="import-counts">
@@ -141,7 +186,6 @@ if ($_import_count > 0) {
             const preview = await _post('epex-preview');
             if (!preview.ok || !preview.months || !preview.months.length) return {};
             const months = preview.months;
-            // Show progress bar only when there are multiple months to fetch.
             if (months.length > 1) {
                 impEpexSect.style.display = '';
                 impEpexBar.max   = months.length;
@@ -224,7 +268,6 @@ if ($_import_count > 0) {
         impConfirm.addEventListener('click', _runImport);
         importDialog.addEventListener('click', e => { if (e.target === importDialog) importDialog.close(); });
 
-        // Auto-open preview after a fresh CSV upload
         if (sessionStorage.getItem('autoPreview') === '1') {
             sessionStorage.removeItem('autoPreview');
             importBtn.click();
@@ -244,9 +287,6 @@ if ($_import_count > 0) {
             fd.append('csrf_token', csrfToken);
             fetch(apiBase + '/api.php?type=upload-csv', { method: 'POST', body: fd })
                 .then(r => {
-                    // If HTTP status is success, parse JSON for error details but
-                    // treat a parse failure as success — the file was saved even if
-                    // the server prepended non-JSON output (e.g. WAF decoration).
                     if (r.ok) return r.json().catch(() => ({ ok: true }));
                     return r.json().catch(() => ({ error: 'Upload fehlgeschlagen (HTTP ' + r.status + ')' }));
                 })
@@ -265,3 +305,39 @@ if ($_import_count > 0) {
     }
 })();
 </script>
+<?php
+}
+
+/**
+ * Emits the Chrome footer (§13) and closes </body></html>.
+ */
+function render_footer(): void
+{
+    global $base;
+    $stage = in_array(strtolower(APP_ENV), ['local', 'localhost', 'dev', 'development', 'staging', 'akadbrain'], true) ? 'DEV' : 'PROD';
+    Footer::render([
+        'base'    => $base,
+        'owner'   => 'Erik R. Accart-Huemer',
+        'version' => APP_VERSION . '.' . APP_BUILD . ' ' . $stage,
+    ]);
+    echo '</body></html>';
+}
+
+/**
+ * Full pre-auth page shell: <!DOCTYPE>…<body> + Chrome header (no user menu) + <main>.
+ * Caller closes </main> before render_footer().
+ */
+function render_anon_header(string $title): void
+{
+    global $base, $_cspNonce;
+    render_page_head($title);
+    Header::render([
+        'appName'       => 'Energie',
+        'base'          => $base,
+        'cspNonce'      => $_cspNonce ?? '',
+        'brandLogoSrc'  => $base . '/jardyx-logo.svg',
+        'loggedIn'      => false,
+        'anonLoginHref' => null,
+    ]);
+    echo '<main id="main-content" tabindex="-1">';
+}

@@ -1,34 +1,9 @@
 <?php
 require_once __DIR__ . '/../inc/initialize.php';
-$_b = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
+require_once __DIR__ . '/../inc/layout.php';
+$base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
 ?>
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Impressum · Energie</title>
-    <link rel="stylesheet" href="<?= $_b ?>/styles/shared/theme.css">
-    <link rel="stylesheet" href="<?= $_b ?>/styles/shared/reset.css">
-    <link rel="stylesheet" href="<?= $_b ?>/styles/shared/layout.css">
-    <link rel="stylesheet" href="<?= $_b ?>/styles/shared/components.css">
-    <link rel="stylesheet" href="<?= $_b ?>/styles/energie-theme.css">
-    <link rel="stylesheet" href="<?= $_b ?>/styles/energie.css">
-    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= $_b ?>/jardyx-favicon.svg">
-    <link rel="icon" type="image/x-icon" href="<?= $_b ?>/assets/favicon.ico">
-</head>
-<body>
-<header class="app-header">
-    <div class="header-left">
-        <a class="brand" href="<?= $_b ?>/">
-            <img src="<?= $_b ?>/assets/jardyx.svg" class="header-logo" width="28" height="28" alt="">
-            <span class="header-appname">Energie</span>
-        </a>
-    </div>
-    <div class="header-right"></div>
-</header>
-<main id="main-content" tabindex="-1">
+<?php render_anon_header('Impressum'); ?>
 <div class="page-reading">
     <h1>Impressum</h1>
     <p>
@@ -38,9 +13,7 @@ $_b = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
     </p>
     <p>E-Mail: <a href="mailto:contact@eriks.cloud">contact@eriks.cloud</a></p>
     <p class="text-muted">Angaben gemäß § 5 ECG</p>
-    <p><a href="<?= $_b ?>/">← Zurück</a></p>
+    <p><a href="<?= $base ?>/">← Zurück</a></p>
 </div>
 </main>
-<?php \Erikr\Chrome\Footer::render(['base' => $_b]); ?>
-</body>
-</html>
+<?php render_footer(); ?>

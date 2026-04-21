@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+require_once __DIR__ . '/../inc/layout.php';
 auth_require();
 admin_require();
 
@@ -25,31 +26,12 @@ $pageUrl = static function (int $p, string $f): string {
     return 'admin.php?' . http_build_query($qs) . '#users';
 };
 ?>
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Administration · Energie</title>
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/flatpickr-overrides.css">
-    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
-    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/assets/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
-</head>
-<body>
-<?php $page_type = 'admin'; require __DIR__ . '/../inc/_header.php'; ?>
+<?php
+$_adminHead  = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">';
+$_adminHead .= '<link rel="stylesheet" href="' . htmlspecialchars($base, ENT_QUOTES, 'UTF-8') . '/css/flatpickr-overrides.css">';
+render_page_head('Administration', $_adminHead);
+render_header('admin');
+?>
 <main id="main-content" tabindex="-1">
     <div class="admin-section">
 
@@ -107,12 +89,10 @@ $pageUrl = static function (int $p, string $f): string {
 
 <?php \Erikr\Chrome\Admin\UserModals::render(['csrfToken' => $csrfToken]); ?>
 
-<?php require __DIR__ . '/../inc/_footer.php'; ?>
-
 <script nonce="<?= $_cspNonce ?>">
 window.CSRF = <?= json_encode($csrfToken) ?>;
 </script>
-<script src="<?= $base ?>/styles/shared/js/admin.js" nonce="<?= $_cspNonce ?>"></script>
+<script src="<?= $base ?>/css/shared/js/admin.js" nonce="<?= $_cspNonce ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr" nonce="<?= $_cspNonce ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/de.js" nonce="<?= $_cspNonce ?>"></script>
 
@@ -436,5 +416,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
-</body>
-</html>
+<?php render_footer(); ?>

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+require_once __DIR__ . '/../inc/layout.php';
 auth_require();
 
 $userId  = (int) $_SESSION['id'];
@@ -128,29 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 }
 ?>
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Einstellungen · Energie</title>
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
-    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
-    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/assets/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
-</head>
-<body>
-<?php $page_type = 'preferences'; require __DIR__ . '/../inc/_header.php'; ?>
+<?php render_page_head('Einstellungen'); render_header('preferences'); ?>
 <main id="main-content" tabindex="-1">
     <div class="pref-section">
 
@@ -182,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <section id="panel-avatar" class="tab-panel<?= $activeTab !== 'avatar' ? ' hidden' : '' ?>"
                  role="tabpanel" aria-labelledby="tab-avatar"<?= $activeTab !== 'avatar' ? ' hidden' : '' ?>>
-            <link rel="stylesheet" href="<?= $base ?>/styles/shared/js/vendor/cropperjs/cropper.min.css">
+            <link rel="stylesheet" href="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.css">
             <div class="pref-card">
                 <div class="pref-card-hdr">Profilbild</div>
                 <div class="pref-card-body">
@@ -215,8 +194,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
             </div>
-            <script nonce="<?= $_cspNonce ?>" src="<?= $base ?>/styles/shared/js/vendor/cropperjs/cropper.min.js"></script>
-            <script nonce="<?= $_cspNonce ?>" src="<?= $base ?>/styles/shared/js/avatar-cropper.js"></script>
+            <script nonce="<?= $_cspNonce ?>" src="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.js"></script>
+            <script nonce="<?= $_cspNonce ?>" src="<?= $base ?>/css/shared/js/avatar-cropper.js"></script>
             <script nonce="<?= $_cspNonce ?>">
             (function () {
                 const modal = document.getElementById('avatarCropModal');
@@ -313,7 +292,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     </div>
 </main>
-<?php require __DIR__ . '/../inc/_footer.php'; ?>
-<script src="<?= $base ?>/styles/shared/js/admin.js" nonce="<?= $_cspNonce ?>"></script>
-</body>
-</html>
+<script src="<?= $base ?>/css/shared/js/admin.js" nonce="<?= $_cspNonce ?>"></script>
+<?php render_footer(); ?>

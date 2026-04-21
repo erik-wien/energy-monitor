@@ -11,36 +11,18 @@
 // $kpi_eur      float
 // $kpi_ct       float
 
+require_once __DIR__ . '/layout.php';
+
 function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' kWh'; }
 function fmt_eur($v) { return '€ ' . number_format($v, 2, ',', '.'); }
 function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
-?>
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= htmlspecialchars($title) ?> · Energie</title>
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
-    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
-    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/assets/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" nonce="<?= $_cspNonce ?>"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/flatpickr-overrides.css">
-</head>
-<body>
-<?php require __DIR__ . '/_header.php'; ?>
+
+$_chartHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"'
+            . ' nonce="' . htmlspecialchars($_cspNonce, ENT_QUOTES, 'UTF-8') . '"></script>'
+            . '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">'
+            . '<link rel="stylesheet" href="' . htmlspecialchars($base, ENT_QUOTES, 'UTF-8') . '/css/flatpickr-overrides.css">';
+render_page_head($title, $_chartHead);
+render_header($page_type);
 <main>
     <div class="nav-bar">
         <a href="<?= htmlspecialchars($prev_url) ?>">← <?= htmlspecialchars($prev_label) ?></a>
@@ -546,7 +528,4 @@ document.getElementById('print-btn').addEventListener('click', () => {
   }, { passive: true });
 })();
 </script>
-<?php require __DIR__ . '/_footer.php'; ?>
-
-</body>
-</html>
+<?php render_footer(); ?>

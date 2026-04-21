@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
+require_once __DIR__ . '/../inc/layout.php';
 auth_require();
 
 $userId = (int) $_SESSION['id'];
@@ -147,29 +148,7 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
                  . '" width="200" height="200" alt="QR Code">';
 }
 ?>
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sicherheit · Energie</title>
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/reset.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/layout.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/shared/components.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie-theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/styles/energie.css">
-    <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
-    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="<?= $base ?>/assets/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
-</head>
-<body>
-<?php $page_type = 'security'; require __DIR__ . '/../inc/_header.php'; ?>
+<?php render_page_head('Sicherheit'); render_header('security'); ?>
 <main id="main-content" tabindex="-1">
     <div class="pref-section">
 
@@ -325,6 +304,4 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
 
     </div>
 </main>
-<?php require __DIR__ . '/../inc/_footer.php'; ?>
-</body>
-</html>
+<?php render_footer(); ?>
