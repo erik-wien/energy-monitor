@@ -38,3 +38,7 @@ docs/superpowers/
 update.md
 .env
 .env.*
+
+# Generated SVG assets (regenerated on deploy via mcp/generate.py)
+web/jardyx-logo.svg
+web/jardyx-favicon.svg
