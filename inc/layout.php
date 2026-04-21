@@ -74,16 +74,16 @@ function render_header(string $page_type): void
          'href' => 'monthly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
         ['type' => 'yearly',  'label' => 'Jahr',
          'href' => 'yearly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
-        ['label' => 'Apps', 'children' => [
-            ['href' => 'https://wlmonitor.jardyx.com', 'label' => 'WL Monitor'],
-            ['href' => 'https://chat.jardyx.com',      'label' => 'Chat'],
-            ['href' => 'https://zeit.jardyx.com',      'label' => 'Zeit'],
-            ['href' => 'https://lastfm.jardyx.com',    'label' => 'Last.fm'],
-            ['href' => 'https://suche.eriks.cloud',    'label' => 'Suche'],
-        ]],
+    ];
+    $_appsMenu = [
+        ['href' => 'https://wlmonitor.jardyx.com', 'label' => 'WL Monitor'],
+        ['href' => 'https://chat.jardyx.com',      'label' => 'Chat'],
+        ['href' => 'https://zeit.jardyx.com',      'label' => 'Zeit'],
+        ['href' => 'https://lastfm.jardyx.com',    'label' => 'Last.fm'],
+        ['href' => 'https://www.jardyx.com',       'label' => 'Suche'],
     ];
     if (defined('APP_ENV') && APP_ENV === 'local') {
-        $_appMenu[] = ['label' => 'Test', 'children' => [
+        $_appsMenu[] = ['label' => 'Test', 'children' => [
             ['href' => 'http://energie.test',   'label' => 'Energie'],
             ['href' => 'http://wlmonitor.test', 'label' => 'WL Monitor'],
             ['href' => 'http://chat.test',      'label' => 'Chat'],
@@ -120,6 +120,7 @@ function render_header(string $page_type): void
         'csrfToken'     => function_exists('csrf_token') ? csrf_token() : '',
         'pageType'      => $page_type,
         'appMenu'       => $_appMenu,
+        'appsMenu'      => $_appsMenu,
         'extraItems'    => $_extras,
         'brandLogoSrc'  => $base . '/jardyx-logo.svg',
         'themeEndpoint' => $base . '/preferences.php',
