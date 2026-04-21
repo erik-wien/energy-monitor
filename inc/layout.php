@@ -74,7 +74,24 @@ function render_header(string $page_type): void
          'href' => 'monthly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
         ['type' => 'yearly',  'label' => 'Jahr',
          'href' => 'yearly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
+        ['label' => 'Apps', 'children' => [
+            ['href' => 'https://wlmonitor.jardyx.com', 'label' => 'WL Monitor'],
+            ['href' => 'https://chat.jardyx.com',      'label' => 'Chat'],
+            ['href' => 'https://zeit.jardyx.com',      'label' => 'Zeit'],
+            ['href' => 'https://lastfm.jardyx.com',    'label' => 'Last.fm'],
+            ['href' => 'https://suche.eriks.cloud',    'label' => 'Suche'],
+        ]],
     ];
+    if (defined('APP_ENV') && APP_ENV === 'local') {
+        $_appMenu[] = ['label' => 'Test', 'children' => [
+            ['href' => 'http://energie.test',   'label' => 'Energie'],
+            ['href' => 'http://wlmonitor.test', 'label' => 'WL Monitor'],
+            ['href' => 'http://chat.test',      'label' => 'Chat'],
+            ['href' => 'http://zeit.test',      'label' => 'Zeit'],
+            ['href' => 'http://lastfm.test',    'label' => 'Last.fm'],
+            ['href' => 'http://suche.test',     'label' => 'Suche'],
+        ]];
+    }
 
     // Import toolbar — shown when CSVs are waiting or when admin can upload.
     $_scrapes_dir  = dirname(__DIR__) . '/scrapes';
@@ -106,6 +123,7 @@ function render_header(string $page_type): void
         'extraItems'    => $_extras,
         'brandLogoSrc'  => $base . '/jardyx-logo.svg',
         'themeEndpoint' => $base . '/preferences.php',
+        'securityHref'  => $base . '/security.php',
     ]);
 
     if ($_import_count > 0): ?>
