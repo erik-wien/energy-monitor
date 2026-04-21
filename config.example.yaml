@@ -17,7 +17,7 @@ auth_db:
   host: localhost
   socket: /tmp/mysql.sock
   name: auth
-  user: wlmonitor
+  user: energie
   password: your_password
 slack:
   bot_token: your_bot_token
@@ -27,6 +27,7 @@ app:
   support_email: contact@eriks.cloud
   color: '#d6a733'
   base_url: http://energie.test
+  env: local
 APP_CODE: energie
 hofer:
   username: fu.armin@gmail.com
