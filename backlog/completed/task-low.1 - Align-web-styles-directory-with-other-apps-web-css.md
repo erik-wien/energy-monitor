@@ -1,10 +1,10 @@
 ---
 id: TASK-LOW.1
 title: Align web/styles/ directory with other apps' web/css/
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-21 05:44'
-updated_date: '2026-04-21 06:16'
+updated_date: '2026-04-21 11:54'
 labels: []
 dependencies: []
 parent_task_id: TASK-LOW
@@ -18,10 +18,10 @@ Audit 2026-04-20: Energie is the only app using web/styles/ instead of web/css/.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 web/styles/ renamed to web/css/
-- [ ] #2 shared symlink absolute, pointing at /Users/erikr/Git/css_library
-- [ ] #3 All <link rel="stylesheet"> paths updated
-- [ ] #4 nginx + .htaccess + deploy paths updated
+- [x] #1 web/styles/ renamed to web/css/
+- [x] #2 shared symlink absolute, pointing at /Users/erikr/Git/css_library
+- [x] #3 All <link rel="stylesheet"> paths updated
+- [x] #4 nginx + .htaccess + deploy paths updated
 <!-- AC:END -->
 
 ## Implementation Plan
