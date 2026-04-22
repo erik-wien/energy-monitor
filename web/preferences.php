@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             addAlert('danger', 'Konnte Sitzungen nicht beenden.');
         }
-        header('Location: preferences.php#sicherheit'); exit;
+        header('Location: preferences.php'); exit;
     }
 
 }
@@ -138,29 +138,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endforeach; unset($_SESSION['alerts']); ?>
 
         <?php
-        $activeTab = 'avatar';
+        $activeTab = 'profilbild';
         if (!empty($errors['email']))        { $activeTab = 'email'; }
         elseif (!empty($errors['theme']))    { $activeTab = 'theme'; }
-        elseif (!empty($errors['avatar']))   { $activeTab = 'avatar'; }
+        elseif (!empty($errors['avatar']))   { $activeTab = 'profilbild'; }
         ?>
 
         <nav class="tab-bar" role="tablist" aria-label="Einstellungen">
-            <button type="button" class="tab-btn<?= $activeTab === 'avatar' ? ' active' : '' ?>"
-                    id="tab-avatar" role="tab" aria-controls="panel-avatar"
-                    aria-selected="<?= $activeTab === 'avatar' ? 'true' : 'false' ?>" data-tab="avatar">Profilbild</button>
+            <button type="button" class="tab-btn<?= $activeTab === 'profilbild' ? ' active' : '' ?>"
+                    id="tab-profilbild" role="tab" aria-controls="panel-profilbild"
+                    aria-selected="<?= $activeTab === 'profilbild' ? 'true' : 'false' ?>" data-tab="profilbild">Profilbild</button>
             <button type="button" class="tab-btn<?= $activeTab === 'email' ? ' active' : '' ?>"
                     id="tab-email" role="tab" aria-controls="panel-email"
                     aria-selected="<?= $activeTab === 'email' ? 'true' : 'false' ?>" data-tab="email">E-Mail</button>
             <button type="button" class="tab-btn<?= $activeTab === 'theme' ? ' active' : '' ?>"
                     id="tab-theme" role="tab" aria-controls="panel-theme"
                     aria-selected="<?= $activeTab === 'theme' ? 'true' : 'false' ?>" data-tab="theme">Design</button>
-            <button type="button" class="tab-btn<?= $activeTab === 'sicherheit' ? ' active' : '' ?>"
-                    id="tab-sicherheit" role="tab" aria-controls="panel-sicherheit"
-                    aria-selected="<?= $activeTab === 'sicherheit' ? 'true' : 'false' ?>" data-tab="sicherheit">Sicherheit</button>
         </nav>
 
-        <section id="panel-avatar" class="tab-panel<?= $activeTab !== 'avatar' ? ' hidden' : '' ?>"
-                 role="tabpanel" aria-labelledby="tab-avatar"<?= $activeTab !== 'avatar' ? ' hidden' : '' ?>>
+        <section id="panel-profilbild" class="tab-panel<?= $activeTab !== 'profilbild' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-profilbild"<?= $activeTab !== 'profilbild' ? ' hidden' : '' ?>>
             <link rel="stylesheet" href="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.css">
             <div class="pref-card">
                 <div class="pref-card-hdr">Profilbild</div>
@@ -267,24 +264,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label for="th_dark">🌙 Dunkel</label>
                         </div>
                         <button class="btn btn-outline-success" type="submit">Speichern</button>
-                    </form>
-                </div>
-            </div>
-        </section>
-
-        <section id="panel-sicherheit" class="tab-panel<?= $activeTab !== 'sicherheit' ? ' hidden' : '' ?>"
-                 role="tabpanel" aria-labelledby="tab-sicherheit"<?= $activeTab !== 'sicherheit' ? ' hidden' : '' ?>>
-            <div class="pref-card">
-                <div class="pref-card-hdr">Aktive Sitzungen</div>
-                <div class="pref-card-body">
-                    <p>Meldet Sie auf allen Geräten und allen Apps auf eriks.cloud ab.</p>
-                    <p class="text-muted small">Aktive Sitzungen auf anderen Apps bleiben bis zu 4 Tage bestehen;
-                        um sie sofort zu beenden, ändern Sie Ihr Kennwort.</p>
-                    <form method="post" action="preferences.php"
-                          onsubmit="return confirm('Wirklich von allen Geräten abmelden?')">
-                        <?= csrf_input() ?>
-                        <input type="hidden" name="action" value="revoke_all_devices">
-                        <button type="submit" class="btn btn-outline-danger">Von allen Geräten abmelden</button>
                     </form>
                 </div>
             </div>

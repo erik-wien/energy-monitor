@@ -124,6 +124,8 @@ function render_header(string $page_type): void
         'extraItems'    => $_extras,
         'brandLogoSrc'  => $base . '/jardyx-logo.svg',
         'themeEndpoint' => $base . '/preferences.php',
+        'profileHref'   => $base . '/preferences.php#profilbild',
+        'emailHref'     => $base . '/preferences.php#email',
         'securityHref'  => $base . '/security.php',
     ]);
 
