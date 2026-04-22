@@ -3,8 +3,8 @@
 target: local
 db:
   host: localhost
-  name: wlmonitor
-  user: wlmonitor
+  name: jardyx
+  user: energie
   password: your_password
 deploy:
   web_root: /Library/WebServer/Documents
@@ -16,7 +16,7 @@ deploy:
 auth_db:
   host: localhost
   socket: /tmp/mysql.sock
-  name: auth
+  name: jardyx
   user: energie
   password: your_password
 slack:

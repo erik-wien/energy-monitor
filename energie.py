@@ -4,6 +4,7 @@
 import argparse
 import configparser
 import csv
+import yaml
 import decimal
 import glob
 import json
@@ -17,12 +18,30 @@ import requests
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
+CONFIG_YAML = os.path.join(os.path.dirname(__file__), "config.yaml")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.ini")
 ARCHIV_DIR  = os.path.join(os.path.dirname(__file__), "_Archiv")
 
 
 def load_config(path=None):
+    """Load config; prefers config.yaml (mcp/generate.py), falls back to INI.
+
+    If `path` ends in .yaml/.yml it's loaded as YAML; otherwise ConfigParser.
+    When no `path` is given, config.yaml next to this script wins over any
+    legacy INI handed in by Energie's PHP layer.
+    """
+    if path is None and os.path.isfile(CONFIG_YAML):
+        path = CONFIG_YAML
+
     resolved = path or CONFIG_PATH
+    if resolved.endswith((".yaml", ".yml")):
+        with open(resolved) as f:
+            cfg = yaml.safe_load(f) or {}
+        # db.name is the mcp schema; keep `database` alias so legacy accesses work.
+        if "db" in cfg and "name" in cfg["db"] and "database" not in cfg["db"]:
+            cfg["db"]["database"] = cfg["db"]["name"]
+        return cfg
+
     cfg = configparser.ConfigParser()
     if not cfg.read(resolved):
         sys.exit(f"❌ Config not found at {resolved}")
