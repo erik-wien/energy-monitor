@@ -23,6 +23,7 @@ $_chartHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.u
             . '<link rel="stylesheet" href="' . htmlspecialchars($base, ENT_QUOTES, 'UTF-8') . '/css/flatpickr-overrides.css">';
 render_page_head($title, $_chartHead);
 render_header($page_type);
+?>
 <main>
     <div class="nav-bar">
         <a href="<?= htmlspecialchars($prev_url) ?>">← <?= htmlspecialchars($prev_label) ?></a>

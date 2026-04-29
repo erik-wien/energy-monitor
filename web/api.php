@@ -456,6 +456,17 @@ if ($type === 'daily') {
         }
     } else {
         // PHP-native fallback (world4you: no proc_open / no Python).
+        // Fetch missing EPEX prices first so spot_ct is populated before cost_brutto is calculated.
+        require_once __DIR__ . '/../inc/epex_importer.php';
+        try {
+            $epex = php_fetch_missing_epex($pdo);
+            if ($epex['rows'] > 0) {
+                $log .= 'EPEX: ' . $epex['log'] . "\n";
+                appendLog($con, 'import', sprintf('EPEX auto: %d Monat(e), %d Zeilen.', $epex['months'], $epex['rows']));
+            }
+        } catch (Exception $e) {
+            $log .= 'EPEX-Abruf fehlgeschlagen: ' . $e->getMessage() . "\n";
+        }
         foreach ($files as $file) {
             if (strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'csv') {
                 $log .= basename($file) . ": XLSX-Import nur mit Python verfügbar.\n";

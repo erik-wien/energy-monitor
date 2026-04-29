@@ -147,161 +147,188 @@ if (!$has2fa && $setupData !== null && time() <= $setupData['until']) {
     $setupQrHtml = '<img src="data:image/svg+xml;base64,' . base64_encode($svg)
                  . '" width="200" height="200" alt="QR Code">';
 }
+
+// ── Active tab (server-side fallback when returning after a POST error) ────────
+$activeTab = 'kennwort';
+if (!empty($errors['totp']))     { $activeTab = '2fa'; }
+elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
 ?>
 <?php render_page_head('Sicherheit'); render_header('security'); ?>
 <main id="main-content" tabindex="-1">
-    <div class="pref-section">
+    <div class="pref-section-wide">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>
             <div class="alert alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"><?= $msg ?></div>
         <?php endforeach; unset($_SESSION['alerts']); ?>
 
+        <nav class="tab-bar" role="tablist" aria-label="Sicherheit">
+            <button type="button" class="tab-btn<?= $activeTab === 'kennwort' ? ' active' : '' ?>"
+                    id="tab-kennwort" role="tab" aria-controls="panel-kennwort"
+                    aria-selected="<?= $activeTab === 'kennwort' ? 'true' : 'false' ?>" data-tab="kennwort">Kennwort ändern</button>
+            <button type="button" class="tab-btn<?= $activeTab === '2fa' ? ' active' : '' ?>"
+                    id="tab-2fa" role="tab" aria-controls="panel-2fa"
+                    aria-selected="<?= $activeTab === '2fa' ? 'true' : 'false' ?>" data-tab="2fa">Zwei-Faktor-Authentifizierung</button>
+            <button type="button" class="tab-btn<?= $activeTab === 'sitzungen' ? ' active' : '' ?>"
+                    id="tab-sitzungen" role="tab" aria-controls="panel-sitzungen"
+                    aria-selected="<?= $activeTab === 'sitzungen' ? 'true' : 'false' ?>" data-tab="sitzungen">Aktive Sitzungen</button>
+        </nav>
+
         <!-- Kennwort -->
-        <div class="pref-card">
-            <div class="pref-card-hdr">Kennwort ändern</div>
-            <div class="pref-card-body">
-                <?php if (!empty($errors['password'])): ?>
-                    <div class="alert alert-danger"><?= htmlspecialchars($errors['password'], ENT_QUOTES, 'UTF-8') ?></div>
-                <?php endif; ?>
-                <form method="post" action="security.php">
-                    <?= csrf_input() ?>
-                    <input type="hidden" name="action" value="change_password">
-                    <div class="form-group">
-                        <label for="oldPassword">Altes Kennwort</label>
-                        <input type="password" id="oldPassword" name="oldPassword"
-                               class="form-control" autocomplete="current-password" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="newPassword1">Neues Kennwort</label>
-                        <input type="password" id="newPassword1" name="newPassword1"
-                               class="form-control" autocomplete="new-password" minlength="8" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="newPassword2">Neues Kennwort bestätigen</label>
-                        <input type="password" id="newPassword2" name="newPassword2"
-                               class="form-control" autocomplete="new-password" minlength="8" required>
-                    </div>
-                    <button class="btn btn-outline-success" type="submit">Speichern</button>
-                </form>
+        <section id="panel-kennwort" class="tab-panel<?= $activeTab !== 'kennwort' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-kennwort"<?= $activeTab !== 'kennwort' ? ' hidden' : '' ?>>
+            <div class="pref-card">
+                <div class="pref-card-hdr">Kennwort ändern</div>
+                <div class="pref-card-body">
+                    <?php if (!empty($errors['password'])): ?>
+                        <div class="alert alert-danger"><?= htmlspecialchars($errors['password'], ENT_QUOTES, 'UTF-8') ?></div>
+                    <?php endif; ?>
+                    <form method="post" action="security.php">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="change_password">
+                        <div class="form-group">
+                            <label for="oldPassword">Altes Kennwort</label>
+                            <input type="password" id="oldPassword" name="oldPassword"
+                                   class="form-control" autocomplete="current-password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword1">Neues Kennwort</label>
+                            <input type="password" id="newPassword1" name="newPassword1"
+                                   class="form-control" autocomplete="new-password" minlength="8" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword2">Neues Kennwort bestätigen</label>
+                            <input type="password" id="newPassword2" name="newPassword2"
+                                   class="form-control" autocomplete="new-password" minlength="8" required>
+                        </div>
+                        <button class="btn btn-outline-success" type="submit">Speichern</button>
+                    </form>
+                </div>
             </div>
-        </div>
+        </section>
 
         <!-- Zwei-Faktor-Authentifizierung -->
-        <div class="pref-card">
-            <div class="pref-card-hdr">Zwei-Faktor-Authentifizierung</div>
-            <div class="pref-card-body">
-                <?php if (!empty($errors['totp'])): ?>
-                    <div class="alert alert-danger">
-                        <?= htmlspecialchars($errors['totp'], ENT_QUOTES, 'UTF-8') ?>
-                    </div>
-                <?php endif; ?>
-
-                <?php if ($has2fa): ?>
-                    <p class="text-muted" style="margin-bottom:.75rem">
-                        Dein Konto ist mit einem TOTP-Authenticator gesichert.
-                    </p>
-                    <form method="post" action="security.php"
-                          onsubmit="return confirm('2FA wirklich deaktivieren?');">
-                        <?= csrf_input() ?>
-                        <input type="hidden" name="action" value="totp_disable">
-                        <button type="submit" class="btn">2FA deaktivieren</button>
-                    </form>
-
-                <?php elseif ($setupSecret !== null): ?>
-                    <p class="text-muted" style="margin-bottom:.5rem">
-                        Scanne den QR-Code mit deiner Authenticator-App:
-                    </p>
-                    <div class="totp-qr-wrap"><?= $setupQrHtml ?></div>
-                    <p class="text-muted" style="margin-bottom:.75rem">
-                        Oder gib den Code manuell ein:
-                        <span class="totp-secret"><?= htmlspecialchars($setupSecret, ENT_QUOTES, 'UTF-8') ?></span>
-                    </p>
-                    <form method="post" action="security.php">
-                        <?= csrf_input() ?>
-                        <input type="hidden" name="action" value="totp_confirm">
-                        <div class="form-group">
-                            <label for="totp_code">6-stelliger Code zur Bestätigung</label>
-                            <input type="text" id="totp_code" name="totp_code"
-                                   inputmode="numeric" maxlength="6"
-                                   autocomplete="one-time-code" required autofocus
-                                   class="totp-code-input" style="max-width:200px;">
+        <section id="panel-2fa" class="tab-panel<?= $activeTab !== '2fa' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-2fa"<?= $activeTab !== '2fa' ? ' hidden' : '' ?>>
+            <div class="pref-card">
+                <div class="pref-card-hdr">Zwei-Faktor-Authentifizierung</div>
+                <div class="pref-card-body">
+                    <?php if (!empty($errors['totp'])): ?>
+                        <div class="alert alert-danger">
+                            <?= htmlspecialchars($errors['totp'], ENT_QUOTES, 'UTF-8') ?>
                         </div>
-                        <button type="submit" class="btn btn-outline-success">Bestätigen</button>
-                    </form>
+                    <?php endif; ?>
 
-                <?php else: ?>
-                    <p class="text-muted" style="margin-bottom:.75rem">
-                        2FA ist derzeit nicht aktiviert. Aktiviere es, um dein Konto mit einem
-                        zweiten Faktor zu schützen.
-                    </p>
-                    <form method="post" action="security.php">
-                        <?= csrf_input() ?>
-                        <input type="hidden" name="action" value="totp_start">
-                        <button type="submit" class="btn btn-outline-success">2FA aktivieren</button>
-                    </form>
-                <?php endif; ?>
+                    <?php if ($has2fa): ?>
+                        <p class="text-muted" style="margin-bottom:.75rem">
+                            Dein Konto ist mit einem TOTP-Authenticator gesichert.
+                        </p>
+                        <form method="post" action="security.php"
+                              onsubmit="return confirm('2FA wirklich deaktivieren?');">
+                            <?= csrf_input() ?>
+                            <input type="hidden" name="action" value="totp_disable">
+                            <button type="submit" class="btn">2FA deaktivieren</button>
+                        </form>
+
+                    <?php elseif ($setupSecret !== null): ?>
+                        <p class="text-muted" style="margin-bottom:.5rem">
+                            Scanne den QR-Code mit deiner Authenticator-App:
+                        </p>
+                        <div class="totp-qr-wrap"><?= $setupQrHtml ?></div>
+                        <p class="text-muted" style="margin-bottom:.75rem">
+                            Oder gib den Code manuell ein:
+                            <span class="totp-secret"><?= htmlspecialchars($setupSecret, ENT_QUOTES, 'UTF-8') ?></span>
+                        </p>
+                        <form method="post" action="security.php">
+                            <?= csrf_input() ?>
+                            <input type="hidden" name="action" value="totp_confirm">
+                            <div class="form-group">
+                                <label for="totp_code">6-stelliger Code zur Bestätigung</label>
+                                <input type="text" id="totp_code" name="totp_code"
+                                       inputmode="numeric" maxlength="6"
+                                       autocomplete="one-time-code" required autofocus
+                                       class="totp-code-input" style="max-width:200px;">
+                            </div>
+                            <button type="submit" class="btn btn-outline-success">Bestätigen</button>
+                        </form>
+
+                    <?php else: ?>
+                        <p class="text-muted" style="margin-bottom:.75rem">
+                            2FA ist derzeit nicht aktiviert. Aktiviere es, um dein Konto mit einem
+                            zweiten Faktor zu schützen.
+                        </p>
+                        <form method="post" action="security.php">
+                            <?= csrf_input() ?>
+                            <input type="hidden" name="action" value="totp_start">
+                            <button type="submit" class="btn btn-outline-success">2FA aktivieren</button>
+                        </form>
+                    <?php endif; ?>
+                </div>
             </div>
-        </div>
+        </section>
 
         <!-- Aktive Sitzungen -->
-        <div class="pref-card">
-            <div class="pref-card-hdr">Aktive Sitzungen</div>
-            <div class="pref-card-body">
-                <?php if (!empty($sessions)): ?>
-                    <div class="table-responsive">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Gerät</th>
-                                    <th>IP</th>
-                                    <th>Ausgestellt</th>
-                                    <th>Läuft ab</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($sessions as $s): ?>
-                                    <tr<?= $s['is_current'] ? ' class="is-current"' : '' ?>>
-                                        <td>
-                                            <?= htmlspecialchars($s['browser_os'], ENT_QUOTES, 'UTF-8') ?>
-                                            <?php if ($s['user_agent'] !== ''): ?>
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" class="icon-info-circle" tabindex="0" role="img"><title><?= htmlspecialchars($s['user_agent'], ENT_QUOTES, 'UTF-8') ?></title><circle cx="8" cy="8" r="7" fill="currentColor"/><text x="8" y="12" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="11" font-weight="bold" font-style="italic" fill="#fff">i</text></svg>
-                                            <?php endif; ?>
-                                            <?php if ($s['is_current']): ?>
-                                                <span class="badge badge-info">Diese Sitzung</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td><code><?= htmlspecialchars($s['ip'], ENT_QUOTES, 'UTF-8') ?></code></td>
-                                        <td><?= htmlspecialchars(substr($s['created_at'], 0, 16), ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td><?= htmlspecialchars(substr($s['expires_at'], 0, 16), ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td>
-                                            <form method="post" action="security.php"
-                                                  <?= $s['is_current'] ? 'onsubmit="return confirm(\'Das ist Ihre aktuelle Sitzung. Wirklich abmelden?\')"' : '' ?>>
-                                                <?= csrf_input() ?>
-                                                <input type="hidden" name="action" value="revoke_one_device">
-                                                <input type="hidden" name="selector" value="<?= htmlspecialchars($s['selector'], ENT_QUOTES, 'UTF-8') ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger">Abmelden</button>
-                                            </form>
-                                        </td>
+        <section id="panel-sitzungen" class="tab-panel<?= $activeTab !== 'sitzungen' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-sitzungen"<?= $activeTab !== 'sitzungen' ? ' hidden' : '' ?>>
+            <div class="pref-card">
+                <div class="pref-card-hdr">Aktive Sitzungen</div>
+                <div class="pref-card-body">
+                    <?php if (!empty($sessions)): ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Gerät</th>
+                                        <th>IP</th>
+                                        <th>Ausgestellt</th>
+                                        <th>Läuft ab</th>
+                                        <th></th>
                                     </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
-                <p class="text-muted small">
-                    Aktive Sitzungen auf anderen Apps bleiben bis zu 4 Tage bestehen;
-                    um sie sofort zu beenden, ändern Sie Ihr Kennwort.
-                </p>
-                <form method="post" action="security.php"
-                      onsubmit="return confirm('Wirklich von allen Geräten abmelden?')">
-                    <?= csrf_input() ?>
-                    <input type="hidden" name="action" value="revoke_all_devices">
-                    <button type="submit" class="btn btn-outline-danger">Von allen Geräten abmelden</button>
-                </form>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($sessions as $s): ?>
+                                        <tr<?= $s['is_current'] ? ' class="is-current"' : '' ?>>
+                                            <td>
+                                                <?= htmlspecialchars($s['browser_os'], ENT_QUOTES, 'UTF-8') ?>
+                                                <?php if ($s['user_agent'] !== ''): ?>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" class="icon-info-circle" tabindex="0" role="img"><title><?= htmlspecialchars($s['user_agent'], ENT_QUOTES, 'UTF-8') ?></title><circle cx="8" cy="8" r="7" fill="currentColor"/><text x="8" y="12" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="11" font-weight="bold" font-style="italic" fill="#fff">i</text></svg>
+                                                <?php endif; ?>
+                                                <?php if ($s['is_current']): ?>
+                                                    <span class="badge badge-info">Diese Sitzung</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><code><?= htmlspecialchars($s['ip'], ENT_QUOTES, 'UTF-8') ?></code></td>
+                                            <td><?= htmlspecialchars(substr($s['created_at'], 0, 16), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars(substr($s['expires_at'], 0, 16), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td>
+                                                <form method="post" action="security.php"
+                                                      <?= $s['is_current'] ? 'onsubmit="return confirm(\'Das ist Ihre aktuelle Sitzung. Wirklich abmelden?\')"' : '' ?>>
+                                                    <?= csrf_input() ?>
+                                                    <input type="hidden" name="action" value="revoke_one_device">
+                                                    <input type="hidden" name="selector" value="<?= htmlspecialchars($s['selector'], ENT_QUOTES, 'UTF-8') ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Abmelden</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                    <p class="text-muted small">
+                        Aktive Sitzungen auf anderen Apps bleiben bis zu 4 Tage bestehen;
+                        um sie sofort zu beenden, ändern Sie Ihr Kennwort.
+                    </p>
+                    <form method="post" action="security.php"
+                          onsubmit="return confirm('Wirklich von allen Geräten abmelden?')">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="revoke_all_devices">
+                        <button type="submit" class="btn btn-outline-danger">Von allen Geräten abmelden</button>
+                    </form>
+                </div>
             </div>
-        </div>
+        </section>
 
     </div>
 </main>
+<script src="<?= $base ?>/css/shared/js/admin.js" nonce="<?= $_cspNonce ?>"></script>
 <?php render_footer(); ?>
