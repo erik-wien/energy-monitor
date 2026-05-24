@@ -7,18 +7,29 @@
  * with missing prices, then recalculates cost_brutto and
  * rebuilds daily_summary for newly-fixed slots.
  *
- * Usage (world4you):
- *   /usr/bin/php84 /path/to/energie/scripts/cron_fetch_epex.php
+ * Usage (world4you URL cron):
+ *   https://energie.jardyx.com/scripts/cron_fetch_epex.php?token=<CRON_TOKEN>
  *
- * Usage (akadbrain):
+ * Usage (CLI / akadbrain):
  *   /opt/homebrew/bin/php /path/to/energie/scripts/cron_fetch_epex.php
  */
 
 $root = dirname(__DIR__);
 require_once $root . '/inc/yaml.php';
-require_once $root . '/inc/epex_importer.php';
 
 $cfg = wl_yaml_load($root . '/config.yaml');
+
+// Token check when called via HTTP (world4you URL cron).
+if (PHP_SAPI !== 'cli') {
+    $token = $cfg['cron_token'] ?? '';
+    if ($token === '' || ($_GET['token'] ?? '') !== $token) {
+        http_response_code(403);
+        exit('Forbidden');
+    }
+    header('Content-Type: text/plain; charset=utf-8');
+}
+
+require_once $root . '/inc/epex_importer.php';
 $db  = $cfg['db'];
 $pdo = new PDO(
     'mysql:host=' . $db['host'] . ';dbname=' . $db['name'] . ';charset=utf8mb4',
