@@ -116,6 +116,27 @@ function _csv_fetch_spot_map(PDO $pdo, array $timestamps): array {
 }
 
 /**
+ * Import-preview counts for a set of parsed timestamps.
+ *
+ * Returns ['total', 'existing', 'new']. "existing" mirrors the importer's
+ * definition (see _csv_fetch_spot_map): only rows that ALREADY have
+ * consumption count — EPEX-preseeded spot-only rows (consumed_kwh = 0) are
+ * "new", because importing the CSV fills in their real consumption.
+ */
+function preview_import_counts(PDO $pdo, array $timestamps): array {
+    $timestamps = array_values(array_unique($timestamps));
+    $total      = count($timestamps);
+    $existing   = 0;
+    foreach (array_chunk($timestamps, 1000) as $chunk) {
+        $ph   = implode(',', array_fill(0, count($chunk), '?'));
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM readings WHERE consumed_kwh > 0 AND ts IN ($ph)");
+        $stmt->execute($chunk);
+        $existing += (int) $stmt->fetchColumn();
+    }
+    return ['total' => $total, 'existing' => $existing, 'new' => $total - $existing];
+}
+
+/**
  * Load all tariff_config rows once; resolve per-date by picking the latest
  * valid_from <= date. Keeps per-row tariff lookup entirely in PHP.
  */
@@ -173,6 +194,31 @@ function php_import_csv(PDO $pdo, string $filepath, string $archiv): array {
     }
     $inserted = $total - $existing;
 
+    _csv_upsert_rows($pdo, $rows, $spotMap, $tariffs);
+    _csv_rebuild_daily_summary($pdo);
+
+    $log = sprintf(
+        "%s: %d neu, %d vorhanden, %d gesamt\n",
+        basename($filepath), $inserted, $existing, $total
+    );
+
+    if (is_dir($archiv)) {
+        $dest = $archiv . '/' . basename($filepath);
+        if (@rename($filepath, $dest)) {
+            $log .= 'Archiviert: ' . basename($dest) . "\n";
+        }
+    }
+
+    return ['inserted' => $inserted, 'total' => $total, 'log' => $log];
+}
+
+/**
+ * Transactional chunked UPSERT of parsed rows into readings.
+ * Shared by the one-shot importer (php_import_csv) and the per-day
+ * client-loop importer (php_import_day). Does NOT touch daily_summary.
+ */
+function _csv_upsert_rows(PDO $pdo, array $rows, array $spotMap, array $tariffs): void {
+    if (empty($rows)) return;
     $pdo->beginTransaction();
     try {
         foreach (array_chunk($rows, 500) as $chunk) {
@@ -205,29 +251,112 @@ function php_import_csv(PDO $pdo, string $filepath, string $archiv): array {
         $pdo->rollBack();
         throw $e;
     }
+}
 
-    $pdo->exec(
+/**
+ * Rebuild daily_summary from readings.
+ *
+ * @param ?array $days  When null, rebuilds every day (one-shot import / CLI).
+ *                      When given a list of 'YYYY-MM-DD', rebuilds only those —
+ *                      the client-loop finalize scopes to the imported days so
+ *                      it never GROUP-BYs the whole readings table.
+ */
+function _csv_rebuild_daily_summary(PDO $pdo, ?array $days = null): void {
+    $where  = '';
+    $params = [];
+    if ($days !== null) {
+        if (empty($days)) return;
+        $ph     = implode(',', array_fill(0, count($days), '?'));
+        $where  = "WHERE DATE(ts) IN ($ph)";
+        $params = $days;
+    }
+    $stmt = $pdo->prepare(
         "INSERT INTO daily_summary (day, consumed_kwh, cost_brutto, avg_spot_ct)
          SELECT DATE(ts), SUM(consumed_kwh), SUM(cost_brutto), AVG(spot_ct)
          FROM readings
+         $where
          GROUP BY DATE(ts)
          ON DUPLICATE KEY UPDATE
              consumed_kwh = VALUES(consumed_kwh),
              cost_brutto  = VALUES(cost_brutto),
              avg_spot_ct  = VALUES(avg_spot_ct)"
     );
+    $stmt->execute($params);
+}
 
-    $log = sprintf(
-        "%s: %d neu, %d vorhanden, %d gesamt\n",
-        basename($filepath), $inserted, $existing, $total
-    );
-
-    if (is_dir($archiv)) {
-        $dest = $archiv . '/' . basename($filepath);
-        if (@rename($filepath, $dest)) {
-            $log .= 'Archiviert: ' . basename($dest) . "\n";
+/**
+ * Build the per-day work list for the client-loop import (§20).
+ *
+ * Parses each CSV once and groups its rows by calendar day, in file order.
+ * Returns [['file' => path, 'date' => 'YYYY-MM-DD', 'rows' => int], …].
+ * Cheap: parsing only, no DB access. (XLSX files yield no candidates — the
+ * PHP-native path handles CSV only; XLSX import stays Python-only.)
+ */
+function import_candidates(array $files): array {
+    $out = [];
+    foreach ($files as $file) {
+        if (strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'csv') continue;
+        $byDay = [];
+        foreach (_csv_parse_rows($file) as $row) {
+            $day = substr($row['ts'], 0, 10);
+            $byDay[$day] = ($byDay[$day] ?? 0) + 1;
+        }
+        foreach ($byDay as $day => $count) {
+            $out[] = ['file' => $file, 'date' => $day, 'rows' => $count];
         }
     }
+    return $out;
+}
 
-    return ['inserted' => $inserted, 'total' => $total, 'log' => $log];
+/**
+ * Import exactly one calendar day's rows from one CSV file.
+ *
+ * One client-loop chunk: small enough (~96 quarter-hours) to finish well
+ * under any proxy/PHP timeout. Does NOT rebuild daily_summary and does NOT
+ * archive the file — both happen once in php_import_finalize().
+ *
+ * @return array ['inserted' => int, 'existing' => int, 'total' => int]
+ */
+function php_import_day(PDO $pdo, string $filepath, string $date): array {
+    $rows = array_values(array_filter(
+        _csv_parse_rows($filepath),
+        static fn(array $r): bool => substr($r['ts'], 0, 10) === $date
+    ));
+    if (empty($rows)) {
+        return ['inserted' => 0, 'existing' => 0, 'total' => 0];
+    }
+
+    $spotMap = _csv_fetch_spot_map($pdo, array_column($rows, 'ts'));
+    $tariffs = _csv_load_tariffs($pdo);
+
+    $total    = count($rows);
+    $existing = 0;
+    foreach ($spotMap as $entry) {
+        if ($entry['had_consumption']) $existing++;
+    }
+
+    _csv_upsert_rows($pdo, $rows, $spotMap, $tariffs);
+
+    return ['inserted' => $total - $existing, 'existing' => $existing, 'total' => $total];
+}
+
+/**
+ * Finish a client-loop import: rebuild daily_summary for the imported days
+ * only, then archive the processed files. Called once after all per-day
+ * chunks succeeded.
+ *
+ * @return array ['days' => int, 'archived' => string[]]
+ */
+function php_import_finalize(PDO $pdo, array $days, array $files, string $archiv): array {
+    $days = array_values(array_unique(array_filter($days)));
+    _csv_rebuild_daily_summary($pdo, $days);
+
+    $archived = [];
+    foreach ($files as $file) {
+        if (is_dir($archiv) && is_file($file)) {
+            $dest = $archiv . '/' . basename($file);
+            if (@rename($file, $dest)) $archived[] = basename($dest);
+        }
+    }
+    return ['days' => count($days), 'archived' => $archived];
 }

@@ -384,22 +384,12 @@ if ($type === 'daily') {
             : [];                          // XLSX: preview not implemented; import will validate
         $timestamps = array_merge($timestamps, $ts);
     }
-    $timestamps = array_values(array_unique($timestamps));
-    $total = count($timestamps);
-    $existing = 0;
-    if ($total > 0) {
-        $ph   = implode(',', array_fill(0, $total, '?'));
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM readings WHERE ts IN ($ph)");
-        $stmt->execute($timestamps);
-        $existing = (int) $stmt->fetchColumn();
-    }
+    require_once __DIR__ . '/../inc/csv_importer.php';
+    $counts = preview_import_counts($pdo, $timestamps);
     echo json_encode([
-        'ok'       => true,
-        'total'    => $total,
-        'existing' => $existing,
-        'new'      => $total - $existing,
-        'files'    => count($files),
-    ]);
+        'ok'    => true,
+        'files' => count($files),
+    ] + $counts);
 
 } elseif ($type === 'trigger-import') {
     require_once __DIR__ . '/../inc/csv_importer.php';
@@ -500,6 +490,89 @@ if ($type === 'daily') {
         'total'    => $total,
         'log'      => $log,
     ]);
+
+} elseif ($type === 'import-candidates') {
+    // §20 client-loop step 1: return the per-day work list (cheap, parsing only).
+    require_once __DIR__ . '/../inc/csv_importer.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+    }
+    $root    = realpath(dirname(__DIR__));
+    $scrapes = $root . '/scrapes';
+    $files   = glob($scrapes . '/*.csv') ?: [];
+    // Expose only basenames to the client — import-chunk reconstructs the path
+    // under scrapes/ so a tampered path can't escape the directory.
+    $candidates = array_map(static fn(array $c): array => [
+        'file' => basename($c['file']),
+        'date' => $c['date'],
+        'rows' => $c['rows'],
+    ], import_candidates($files));
+    echo json_encode(['ok' => true, 'candidates' => $candidates]);
+
+} elseif ($type === 'import-chunk') {
+    // §20 client-loop step 2: import exactly one day from one file.
+    require_once __DIR__ . '/../inc/csv_importer.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+    }
+    $root    = realpath(dirname(__DIR__));
+    $scrapes = $root . '/scrapes';
+    $name    = basename((string) ($_POST['file'] ?? ''));   // basename() blocks path traversal
+    $date    = (string) ($_POST['date'] ?? '');
+    $path    = $scrapes . '/' . $name;
+    if ($name === '' || !is_file($path)) {
+        http_response_code(404); echo json_encode(['ok' => false, 'error' => 'Unknown file']); exit;
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        http_response_code(400); echo json_encode(['ok' => false, 'error' => 'Bad date']); exit;
+    }
+    try {
+        $r = php_import_day($pdo, $path, $date);
+        echo json_encode(['ok' => true, 'date' => $date] + $r);
+    } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
+
+} elseif ($type === 'import-finalize') {
+    // §20 client-loop step 3: rebuild daily_summary for the imported days, archive.
+    require_once __DIR__ . '/../inc/csv_importer.php';
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+    }
+    $root    = realpath(dirname(__DIR__));
+    $scrapes = $root . '/scrapes';
+    $archiv  = $root . '/_Archiv';
+    if (!is_dir($archiv)) mkdir($archiv, 0755, true);
+    $days = array_values(array_filter(
+        (array) ($_POST['days'] ?? []),
+        static fn($d): bool => is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) === 1
+    ));
+    $paths = array_map(
+        static fn($n): string => $scrapes . '/' . basename((string) $n),
+        (array) ($_POST['files'] ?? [])
+    );
+    try {
+        $res = php_import_finalize($pdo, $days, $paths, $archiv);
+        appendLog($con, 'import', sprintf(
+            'Import (Client-Loop) OK: %d Tag(e), %d Datei(en) archiviert.',
+            $res['days'], count($res['archived'])
+        ));
+        echo json_encode(['ok' => true] + $res);
+    } catch (Throwable $e) {
+        appendLog($con, 'import', 'Import-Finalize FAILED: ' . mb_substr($e->getMessage(), 0, 200));
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
 
 } elseif ($type === 'upload-csv') {
     // Admin-only CSV upload into scrapes/ for manual import

@@ -144,9 +144,13 @@ function render_header(string $page_type): void
         <p id="imp-epex-label" style="font-size:.85rem;color:var(--color-text-muted);margin:0 0 .4rem"></p>
         <progress id="imp-epex-bar" style="width:100%" value="0" max="1"></progress>
     </div>
+    <div id="imp-progress-section" style="display:none;margin-top:1rem">
+        <p id="imp-progress-label" style="font-size:.85rem;color:var(--color-text-muted);margin:0 0 .4rem" aria-live="polite"></p>
+        <progress id="imp-progress-bar" style="width:100%" value="0" max="1"></progress>
+    </div>
     <div class="import-dialog-btns">
         <button class="btn" id="imp-cancel">Abbrechen</button>
-        <button class="btn btn-outline-success" id="imp-confirm">Importieren</button>
+        <button class="btn btn-outline-danger" id="imp-confirm">Importieren</button>
     </div>
 </dialog>
 <?php endif; ?>
@@ -165,11 +169,14 @@ function render_header(string $page_type): void
             const _el = document.createElement('div');
             _el.className = 'alert ' + (_r.ok ? 'alert-success' : 'alert-danger');
             _el.style.cssText = 'margin:0.75rem 1.5rem;';
-            if (_r.ok) {
+            if (_r.ok || _r.cancelled) {
+                if (_r.cancelled) _el.className = 'alert alert-info';
                 let msg = typeof _r.imported === 'number'
                     ? `Import: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
                     : (_r.log || 'OK').trim().slice(0, 200);
                 if (_r.epexMonths) msg += ` Spot-Preise: ${_r.epexMonths} Monat(e) geladen.`;
+                if (_r.failed)    msg += ` ${_r.failed} Tag(e) fehlgeschlagen.`;
+                if (_r.cancelled) msg += ' Abgebrochen.';
                 _el.textContent = msg;
             } else {
                 _el.textContent = `Import fehlgeschlagen: ${(_r.log || _r.error || 'Unbekannter Fehler').trim().slice(0, 200)}`;
@@ -191,7 +198,12 @@ function render_header(string $page_type): void
         const impEpexSect = document.getElementById('imp-epex-section');
         const impEpexBar  = document.getElementById('imp-epex-bar');
         const impEpexLbl  = document.getElementById('imp-epex-label');
+        const impProgSect = document.getElementById('imp-progress-section');
+        const impProgBar  = document.getElementById('imp-progress-bar');
+        const impProgLbl  = document.getElementById('imp-progress-label');
         const importLabel = importBtn.textContent;
+        let importCancelled = false;
+        let importRunning   = false;
 
         function _post(type, extra) {
             let body = 'csrf_token=' + encodeURIComponent(csrfToken);
@@ -231,22 +243,77 @@ function render_header(string $page_type): void
             return { epexMonths: months.length, epexRows };
         }
 
+        // \u00a720 client-loop: EPEX first, then one short request per calendar day,
+        // then a single finalize. Each request stays well under any timeout, the
+        // dialog shows "Tag x / N", per-day failures are tolerated, and Abbrechen
+        // stops the loop cleanly (imported days are still finalized).
         async function _runImport() {
-            impConfirm.disabled = true;
-            impCancel.disabled  = true;
+            importCancelled = false;
+            importRunning   = true;
+            impConfirm.disabled    = true;
             impConfirm.textContent = 'Importiere\u2026';
-            let result;
+            impCancel.disabled     = false;   // stays active so the loop can be cancelled
+
+            let result = { ok: true, imported: 0, existing: 0, total: 0, failed: 0 };
             try {
-                result = await _post('trigger-import');
-            } catch (_) {
-                result = { ok: false, error: 'Netzwerkfehler' };
+                // 1. Spot prices first (admin only) so cost_brutto can be computed.
+                if (isAdmin) {
+                    try { result = Object.assign(result, await _fetchEpexWithProgress()); } catch (_) {}
+                }
+
+                // 2. Per-day work list (cheap, parsing only).
+                const cand = await _post('import-candidates');
+                if (!cand.ok) throw new Error(cand.error || 'Kandidaten fehlgeschlagen');
+                const days  = cand.candidates || [];
+                const files = Array.from(new Set(days.map(d => d.file)));
+
+                // 3. Import day by day.
+                impProgSect.style.display = '';
+                impProgBar.max   = days.length || 1;
+                impProgBar.value = 0;
+                const importedDays = [];
+                const doneKeys     = new Set();
+                for (let i = 0; i < days.length; i++) {
+                    if (importCancelled) break;
+                    const file = days[i].file, date = days[i].date;
+                    impProgLbl.textContent = 'Tag ' + (i + 1) + '\u00a0/\u00a0' + days.length + ' (' + date + ')';
+                    try {
+                        const r = await _post('import-chunk',
+                            'file=' + encodeURIComponent(file) + '&date=' + encodeURIComponent(date));
+                        if (r.ok) {
+                            result.imported += r.inserted || 0;
+                            result.existing += r.existing  || 0;
+                            result.total    += r.total     || 0;
+                            importedDays.push(date);
+                            doneKeys.add(file + ' ' + date);
+                        } else {
+                            result.failed++;
+                        }
+                    } catch (_) {
+                        result.failed++;
+                    }
+                    impProgBar.value = i + 1;
+                }
+
+                // 4. Finalize: rebuild daily_summary for imported days; archive only
+                //    files whose every day succeeded (incomplete files stay for retry).
+                if (importedDays.length) {
+                    impProgLbl.textContent = 'Schlie\u00dfe ab\u2026';
+                    const completeFiles = files.filter(f =>
+                        days.filter(d => d.file === f)
+                            .every(d => doneKeys.has(f + ' ' + d.date)));
+                    let body = '';
+                    importedDays.forEach(d => { body += 'days[]='  + encodeURIComponent(d) + '&'; });
+                    completeFiles.forEach(f => { body += 'files[]=' + encodeURIComponent(f) + '&'; });
+                    try { await _post('import-finalize', body.replace(/&$/, '')); } catch (_) {}
+                }
+
+                result.cancelled = importCancelled;
+                result.ok = !importCancelled && result.failed === 0;
+            } catch (e) {
+                result = { ok: false, error: (e && e.message) || 'Netzwerkfehler' };
             }
-            if (result.ok && isAdmin) {
-                try {
-                    const epex = await _fetchEpexWithProgress();
-                    result = Object.assign({}, result, epex);
-                } catch (_) {}
-            }
+            importRunning = false;
             importDialog.close();
             sessionStorage.setItem('importResult', JSON.stringify(result));
             location.reload();
@@ -275,6 +342,9 @@ function render_header(string $page_type): void
                     impNew.textContent      = d.new;
                     impConfirm.disabled     = false;
                     impConfirm.textContent  = 'Importieren';
+                    impCancel.disabled      = false;
+                    impEpexSect.style.display = 'none';
+                    impProgSect.style.display = 'none';
                     importDialog.showModal();
                 })
                 .catch(() => {
@@ -285,9 +355,20 @@ function render_header(string $page_type): void
                 });
         });
 
-        impCancel.addEventListener('click', () => importDialog.close());
+        impCancel.addEventListener('click', () => {
+            if (importRunning) {
+                // Cancel the running loop; it finishes the current day then stops.
+                importCancelled = true;
+                impCancel.disabled    = true;
+                impCancel.textContent = 'Abbrechen…';
+            } else {
+                importDialog.close();
+            }
+        });
         impConfirm.addEventListener('click', _runImport);
-        importDialog.addEventListener('click', e => { if (e.target === importDialog) importDialog.close(); });
+        importDialog.addEventListener('click', e => {
+            if (e.target === importDialog && !importRunning) importDialog.close();
+        });
 
         if (sessionStorage.getItem('autoPreview') === '1') {
             sessionStorage.removeItem('autoPreview');
