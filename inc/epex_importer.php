@@ -93,13 +93,15 @@ function php_fetch_epex(PDO $pdo, int $year, int $month): array {
  * @return array ['rows' => int, 'months' => int, 'log' => string]
  */
 function php_fetch_missing_epex(PDO $pdo): array {
-    // Months with consumption where we have no spot prices at all yet.
+    // Months with any consumption slot where spot_ct is still missing/zero.
+    // AVG(spot_ct) = 0 would miss partial gaps (e.g. a mid-month import where
+    // earlier slots have prices but later ones don't).
     $missing = $pdo->query(
         "SELECT YEAR(ts) AS y, MONTH(ts) AS m
          FROM readings
          WHERE consumed_kwh > 0
          GROUP BY y, m
-         HAVING AVG(spot_ct) = 0
+         HAVING SUM(spot_ct = 0 OR spot_ct IS NULL) > 0
          ORDER BY y, m"
     )->fetchAll(PDO::FETCH_ASSOC);
 
