@@ -100,7 +100,12 @@ render_header($page_type);
     </div>
     <div class="chart-container" style="margin-top:1rem">
         <canvas id="chart"></canvas>
+        <div class="scrub-line" id="scrub-line" aria-hidden="true"></div>
     </div>
+    <div class="scrub-bar" id="scrub-bar">
+        <div class="scrub-handle" id="scrub-handle"></div>
+    </div>
+    <div class="scrub-readout" id="scrub-readout" aria-live="polite"></div>
 </main>
 
 <script nonce="<?= $_cspNonce ?>">
@@ -174,15 +179,8 @@ fetch(<?= json_encode($api_url) ?>)
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        onClick: (event, elements) => {
-          if (!elements.length) return;
-          const mo = data.months?.[elements[0].index]; // "YYYY-MM"
-          if (!mo) return;
-          const [y, m] = mo.split('-');
-          window.location = base + '/monthly.php?year=' + y + '&month=' + parseInt(m, 10);
-        },
-        onHover: (event, elements) => {
-          event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+        onHover: (event) => {
+          event.native.target.style.cursor = 'default';
         },
         plugins: {
           legend: {
@@ -218,6 +216,82 @@ fetch(<?= json_encode($api_url) ?>)
     if (window._applyChartVis) window._applyChartVis(window._energieChart);
 
     _printHTML = buildPrintContent(data, DE_MO);
+
+    // ── Scrub-Lineal: Crosshair + Anfasser + Werte-Readout ────────────────
+    (function initScrub() {
+      const chart     = window._energieChart;
+      const canvas    = document.getElementById('chart');
+      const container = canvas.parentElement;            // .chart-container
+      const line      = document.getElementById('scrub-line');
+      const bar       = document.getElementById('scrub-bar');
+      const handle    = document.getElementById('scrub-handle');
+      const readout   = document.getElementById('scrub-readout');
+      const n         = data.labels.length;
+      let scrubIndex = null;
+      if (!n) return;
+
+      const clamp  = i => Math.max(0, Math.min(n - 1, i));
+      const fmtEur = v => '€ ' + (v ?? 0).toFixed(2).replace('.', ',');
+      const fmtKwh = v => (v ?? 0).toFixed(2).replace('.', ',') + ' kWh';
+      const fmtCt  = v => (v ?? 0).toFixed(2).replace('.', ',') + ' ct/kWh';
+      const esc    = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      function render() {
+        if (scrubIndex == null) return;
+        const px    = chart.scales.x.getPixelForValue(scrubIndex);
+        const cRect = canvas.getBoundingClientRect();
+        const pRect = container.getBoundingClientRect();
+        const bRect = bar.getBoundingClientRect();
+        line.style.left    = (cRect.left - pRect.left + px) + 'px';
+        line.style.top     = (cRect.top  - pRect.top  + chart.chartArea.top) + 'px';
+        line.style.height  = (chart.chartArea.bottom - chart.chartArea.top) + 'px';
+        line.style.display = 'block';
+        handle.style.left  = (cRect.left - bRect.left + px) + 'px';
+        readout.innerHTML =
+            '<span class="ro-time">' + esc(data.labels[scrubIndex] ?? '') + '</span>'
+          + '<span class="ro-sep">·</span><span class="ro-eur">'    + fmtEur(data.cost[scrubIndex])        + '</span>'
+          + '<span class="ro-sep">·</span><span class="ro-kwh">'    + fmtKwh(data.consumption[scrubIndex]) + '</span>'
+          + '<span class="ro-sep">·</span><span class="ro-tariff">' + fmtCt(data.tariff[scrubIndex])       + '</span>';
+      }
+
+      function setFromClientX(clientX) {
+        const cRect = canvas.getBoundingClientRect();
+        const idx   = clamp(Math.round(chart.scales.x.getValueForPixel(clientX - cRect.left)));
+        scrubIndex  = idx;
+        render();
+      }
+
+      let downX = 0, moved = false, onHandle = false;
+      bar.addEventListener('pointerdown', e => {
+        bar.setPointerCapture(e.pointerId);
+        downX = e.clientX; moved = false;
+        onHandle = (e.target === handle);
+        setFromClientX(e.clientX);
+      });
+      bar.addEventListener('pointermove', e => {
+        if (!bar.hasPointerCapture(e.pointerId)) return;
+        if (Math.abs(e.clientX - downX) > 6) moved = true;
+        setFromClientX(e.clientX);
+      });
+      bar.addEventListener('pointerup', e => {
+        bar.releasePointerCapture(e.pointerId);
+        // Anfasser antippen (ohne Ziehen) → Monatsansicht des gewählten Monats
+        if (onHandle && !moved && data.months && data.months[scrubIndex]) {
+          const [y, m] = String(data.months[scrubIndex]).split('-');
+          window.location = base + '/monthly.php?year=' + y + '&month=' + parseInt(m, 10);
+        }
+      });
+
+      let resizeTimer = null;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(render, 150);
+      });
+
+      // Startposition: Mitte
+      scrubIndex = Math.floor((n - 1) / 2);
+      render();
+    })();
   });
 
 function buildPrintContent(data, DE_MO) {
@@ -392,21 +466,65 @@ document.getElementById('print-btn').addEventListener('click', () => {
   });
 })();
 
-// Swipe navigation
+// Swipe-Navigation + leichte Slide-Animation (nur im Graph-Band)
 (function() {
   const prevUrl = <?= json_encode($prev_url) ?>;
   const nextUrl = <?= json_encode($next_url) ?>;
-  let x0 = 0, y0 = 0;
-  document.addEventListener('touchstart', e => {
-    x0 = e.touches[0].clientX;
-    y0 = e.touches[0].clientY;
+  const container = document.querySelector('.chart-container');
+  if (!container) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const THRESH = 60;
+  let x0 = 0, y0 = 0, dragging = false, dx = 0;
+
+  // Slide-in beim Laden (Richtung aus dem vorherigen Blättern)
+  const from = sessionStorage.getItem('energieSlideFrom');
+  if (from) {
+    sessionStorage.removeItem('energieSlideFrom');
+    if (!reduce) {
+      container.style.transition = 'none';
+      container.style.transform  = 'translateX(' + (from === 'next' ? '100%' : '-100%') + ')';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          container.style.transition = 'transform 0.18s ease-out';
+          container.style.transform  = 'translateX(0)';
+        });
+      });
+    }
+  }
+
+  container.addEventListener('touchstart', e => {
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+    dragging = false; dx = 0;
+    container.style.transition = 'none';
   }, { passive: true });
-  document.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - x0;
-    const dy = e.changedTouches[0].clientY - y0;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx < 0 && nextUrl) window.location = nextUrl;
-    if (dx > 0 && prevUrl) window.location = prevUrl;
+
+  container.addEventListener('touchmove', e => {
+    dx = e.touches[0].clientX - x0;
+    const dy = e.touches[0].clientY - y0;
+    if (!dragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) dragging = true;
+    if (dragging && !reduce) container.style.transform = 'translateX(' + dx + 'px)';
+  }, { passive: true });
+
+  container.addEventListener('touchend', () => {
+    if (!dragging) return;
+    const goNext = dx < 0 && nextUrl;
+    const goPrev = dx > 0 && prevUrl;
+    if (Math.abs(dx) > THRESH && (goNext || goPrev)) {
+      const url = goNext ? nextUrl : prevUrl;
+      sessionStorage.setItem('energieSlideFrom', goNext ? 'next' : 'prev');
+      if (reduce) { window.location = url; return; }
+      container.style.transition = 'transform 0.18s ease-out';
+      container.style.transform  = 'translateX(' + (goNext ? '-100%' : '100%') + ')';
+      setTimeout(() => { window.location = url; }, 180);
+    } else {
+      container.style.transition = 'transform 0.18s ease-out';
+      container.style.transform  = 'translateX(0)';
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchcancel', () => {
+    container.style.transition = 'transform 0.18s ease-out';
+    container.style.transform  = 'translateX(0)';
   }, { passive: true });
 })();
 </script>
