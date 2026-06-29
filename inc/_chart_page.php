@@ -71,7 +71,12 @@ render_header($page_type);
     </div>
     <div class="chart-container">
         <canvas id="chart"></canvas>
+        <div class="scrub-line" id="scrub-line" aria-hidden="true"></div>
     </div>
+    <div class="scrub-bar" id="scrub-bar">
+        <div class="scrub-handle" id="scrub-handle"></div>
+    </div>
+    <div class="scrub-readout" id="scrub-readout" aria-live="polite"></div>
 </main>
 
 <script nonce="<?= $_cspNonce ?>">
