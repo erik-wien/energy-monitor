@@ -103,6 +103,20 @@ legend: { onClick: () => {} }
 
 Click-to-hide on legend items is disabled. Visibility is controlled exclusively through pills to keep localStorage persistence consistent.
 
+### Touch interaction — swipe to page, scrub to read
+
+On touch devices two horizontal gestures used to collide (paging vs. reading values). They are now split into two spatial **bands** so neither triggers the other:
+
+- **Graph band** (`.chart-container`, `touch-action: pan-y`): a horizontal drag pages to the previous/next period with a light slide. Vertical drag scrolls the page normally. The slide animates `translateX` on the container; on release past a threshold the neighbour page is loaded (`window.location`) and slides in via a `sessionStorage('energieSlideFrom')` flag read on load. A double-`requestAnimationFrame` ensures the initial offset frame paints before the transition starts. `prefers-reduced-motion` skips the slide entirely.
+- **Scrub bar** (`#scrub-bar`, below the chart): tap/drag moves a vertical crosshair (`#scrub-line`, white dotted) across the whole plot and updates a value readout (`#scrub-readout`: time + cost + consumption + tariff at the active index). Positions are mapped via `chart.scales.x.getPixelForValue()` / `getValueForPixel()` and `getBoundingClientRect()` offsets, so they hold across resize (debounced). The daily time label is trimmed to `HH:MM` (matching the print convention).
+- **Drill-down:** tapping the handle (`#scrub-handle`) without dragging opens `daily.php?date=…` for the selected day on weekly/monthly; on the daily page it does nothing (finest granularity). This replaced the former `onClick`-on-chart drill-down.
+
+The scrub index is initialised to the **middle** of the range. All gesture state lives inside the `initScrub()` IIFE in `_chart_page.php`.
+
+### Landscape density
+
+In `@media (orientation: landscape) and (pointer: coarse)` (touch devices in landscape — no pixel `max-height`), the KPI cards are made **shorter, not narrower**: a single knob `--kpi-scale` drives the card's `font-size`, with vertical padding and the value/label sizes expressed in `em` (horizontal padding stays in `rem`). The chart saves vertical space via a derived `calc(var(--chart-pad) / 2)`. Portrait and desktop render identically to before (the `em` values resolve to the original `rem` values at the default scale).
+
 ---
 
 ## Print Invoice
