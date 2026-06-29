@@ -86,8 +86,6 @@ const periodLabel   = <?= json_encode($period_label) ?>;
 const base          = <?= json_encode($base) ?>;
 const prevUrl       = <?= json_encode($prev_url) ?>;
 const nextUrl       = <?= json_encode($next_url) ?>;
-let   scrubIndex    = null;
-
 let _printHTML = null;
 let _blobUrl   = null;
 
@@ -237,12 +235,14 @@ fetch(<?= json_encode($api_url) ?>)
       const handle    = document.getElementById('scrub-handle');
       const readout   = document.getElementById('scrub-readout');
       const n         = data.labels.length;
+      let scrubIndex = null;
       if (!n) return;
 
       const clamp  = i => Math.max(0, Math.min(n - 1, i));
       const fmtEur = v => '€ ' + (v ?? 0).toFixed(2).replace('.', ',');
       const fmtKwh = v => (v ?? 0).toFixed(2).replace('.', ',') + ' kWh';
       const fmtCt  = v => (v ?? 0).toFixed(2).replace('.', ',') + ' ct/kWh';
+      const esc    = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       function render() {
         if (scrubIndex == null) return;
@@ -259,7 +259,7 @@ fetch(<?= json_encode($api_url) ?>)
         handle.style.left  = (cRect.left - bRect.left + px) + 'px';
         // Readout
         readout.innerHTML =
-            '<span class="ro-time">' + (data.labels[scrubIndex] ?? '') + '</span>'
+            '<span class="ro-time">' + esc(data.labels[scrubIndex] ?? '') + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-eur">'    + fmtEur(data.cost[scrubIndex])        + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-kwh">'    + fmtKwh(data.consumption[scrubIndex]) + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-tariff">' + fmtCt(data.tariff[scrubIndex])       + '</span>';
@@ -292,7 +292,11 @@ fetch(<?= json_encode($api_url) ?>)
         }
       });
 
-      window.addEventListener('resize', render);
+      let resizeTimer = null;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(render, 150);
+      });
 
       // Startposition: Mitte
       scrubIndex = Math.floor((n - 1) / 2);
@@ -602,8 +606,10 @@ document.getElementById('print-btn').addEventListener('click', () => {
       container.style.transition = 'none';
       container.style.transform  = 'translateX(' + (from === 'next' ? '100%' : '-100%') + ')';
       requestAnimationFrame(() => {
-        container.style.transition = 'transform 0.18s ease-out';
-        container.style.transform  = 'translateX(0)';
+        requestAnimationFrame(() => {
+          container.style.transition = 'transform 0.18s ease-out';
+          container.style.transform  = 'translateX(0)';
+        });
       });
     }
   }
@@ -636,6 +642,11 @@ document.getElementById('print-btn').addEventListener('click', () => {
       container.style.transition = 'transform 0.18s ease-out';
       container.style.transform  = 'translateX(0)';
     }
+  }, { passive: true });
+
+  container.addEventListener('touchcancel', () => {
+    container.style.transition = 'transform 0.18s ease-out';
+    container.style.transform  = 'translateX(0)';
   }, { passive: true });
 })();
 </script>
