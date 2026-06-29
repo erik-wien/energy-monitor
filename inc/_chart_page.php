@@ -84,6 +84,9 @@ const isDailyPage   = <?= json_encode($page_type === 'daily') ?>;
 const isWeeklyPage  = <?= json_encode($page_type === 'weekly') ?>;
 const periodLabel   = <?= json_encode($period_label) ?>;
 const base          = <?= json_encode($base) ?>;
+const prevUrl       = <?= json_encode($prev_url) ?>;
+const nextUrl       = <?= json_encode($next_url) ?>;
+let   scrubIndex    = null;
 
 let _printHTML = null;
 let _blobUrl   = null;
@@ -228,6 +231,75 @@ fetch(<?= json_encode($api_url) ?>)
     if (window._applyChartVis) window._applyChartVis(window._energieChart);
 
     _printHTML = buildPrintContent(data, DE_DAYS);
+
+    // ── Scrub-Lineal: Crosshair + Anfasser + Werte-Readout ────────────────
+    (function initScrub() {
+      const chart     = window._energieChart;
+      const canvas    = document.getElementById('chart');
+      const container = canvas.parentElement;            // .chart-container
+      const line      = document.getElementById('scrub-line');
+      const bar       = document.getElementById('scrub-bar');
+      const handle    = document.getElementById('scrub-handle');
+      const readout   = document.getElementById('scrub-readout');
+      const n         = data.labels.length;
+      if (!n) return;
+
+      const clamp  = i => Math.max(0, Math.min(n - 1, i));
+      const fmtEur = v => '€ ' + (v ?? 0).toFixed(2).replace('.', ',');
+      const fmtKwh = v => (v ?? 0).toFixed(2).replace('.', ',') + ' kWh';
+      const fmtCt  = v => (v ?? 0).toFixed(2).replace('.', ',') + ' ct/kWh';
+
+      function render() {
+        if (scrubIndex == null) return;
+        const px    = chart.scales.x.getPixelForValue(scrubIndex);
+        const cRect = canvas.getBoundingClientRect();
+        const pRect = container.getBoundingClientRect();
+        const bRect = bar.getBoundingClientRect();
+        // Crosshair über die Plot-Höhe
+        line.style.left    = (cRect.left - pRect.left + px) + 'px';
+        line.style.top     = (cRect.top  - pRect.top  + chart.chartArea.top) + 'px';
+        line.style.height  = (chart.chartArea.bottom - chart.chartArea.top) + 'px';
+        line.style.display = 'block';
+        // Anfasser auf der Leiste (gleiche X-Pixel wie der Plot)
+        handle.style.left  = (cRect.left - bRect.left + px) + 'px';
+        // Readout
+        readout.innerHTML =
+            '<span class="ro-time">' + (data.labels[scrubIndex] ?? '') + '</span>'
+          + '<span class="ro-sep">·</span><span class="ro-eur">'    + fmtEur(data.cost[scrubIndex])        + '</span>'
+          + '<span class="ro-sep">·</span><span class="ro-kwh">'    + fmtKwh(data.consumption[scrubIndex]) + '</span>'
+          + '<span class="ro-sep">·</span><span class="ro-tariff">' + fmtCt(data.tariff[scrubIndex])       + '</span>';
+      }
+
+      function setFromClientX(clientX) {
+        const cRect = canvas.getBoundingClientRect();
+        const idx   = clamp(Math.round(chart.scales.x.getValueForPixel(clientX - cRect.left)));
+        scrubIndex  = idx;
+        render();
+      }
+
+      let downX = 0, moved = false, onHandle = false;
+      bar.addEventListener('pointerdown', e => {
+        bar.setPointerCapture(e.pointerId);
+        downX = e.clientX; moved = false;
+        onHandle = (e.target === handle);
+        setFromClientX(e.clientX);
+      });
+      bar.addEventListener('pointermove', e => {
+        if (!bar.hasPointerCapture(e.pointerId)) return;
+        if (Math.abs(e.clientX - downX) > 6) moved = true;
+        setFromClientX(e.clientX);
+      });
+      bar.addEventListener('pointerup', e => {
+        bar.releasePointerCapture(e.pointerId);
+        // Drill-down folgt in Task 4 (onHandle && !moved)
+      });
+
+      window.addEventListener('resize', render);
+
+      // Startposition: Mitte
+      scrubIndex = Math.floor((n - 1) / 2);
+      render();
+    })();
   });
 
 function buildPrintContent(data, DE_DAYS) {
