@@ -113,6 +113,8 @@ On touch devices two horizontal gestures used to collide (paging vs. reading val
 
 The scrub index is initialised to the **middle** of the range. All gesture state lives inside the `initScrub()` IIFE in `_chart_page.php`.
 
+`yearly.php` (separate chart code, not `_chart_page.php`) carries the **same** two-band interaction; its handle-tap drill-down targets the **monthly** view (`monthly.php?year=&month=`) of the selected month.
+
 ### Landscape density
 
 In `@media (orientation: landscape) and (pointer: coarse)` (touch devices in landscape — no pixel `max-height`), the KPI cards are made **shorter, not narrower**: a single knob `--kpi-scale` drives the card's `font-size`, with vertical padding and the value/label sizes expressed in `em` (horizontal padding stays in `rem`). The chart saves vertical space via a derived `calc(var(--chart-pad) / 2)`. Portrait and desktop render identically to before (the `em` values resolve to the original `rem` values at the default scale).
