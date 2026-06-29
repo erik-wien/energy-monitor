@@ -259,7 +259,7 @@ fetch(<?= json_encode($api_url) ?>)
         handle.style.left  = (cRect.left - bRect.left + px) + 'px';
         // Readout
         readout.innerHTML =
-            '<span class="ro-time">' + esc(data.labels[scrubIndex] ?? '') + '</span>'
+            '<span class="ro-time">' + esc(isDailyPage ? String(data.labels[scrubIndex] ?? '').slice(0, 5) : (data.labels[scrubIndex] ?? '')) + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-eur">'    + fmtEur(data.cost[scrubIndex])        + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-kwh">'    + fmtKwh(data.consumption[scrubIndex]) + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-tariff">' + fmtCt(data.tariff[scrubIndex])       + '</span>';
