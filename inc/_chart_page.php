@@ -170,13 +170,8 @@ fetch(<?= json_encode($api_url) ?>)
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        onClick: (event, elements) => {
-          if (isDailyPage || !elements.length) return;
-          const date = data.dates?.[elements[0].index];
-          if (date) window.location = base + '/daily.php?date=' + date;
-        },
-        onHover: (event, elements) => {
-          event.native.target.style.cursor = (!isDailyPage && elements.length) ? 'pointer' : 'default';
+        onHover: (event) => {
+          event.native.target.style.cursor = 'default';
         },
         plugins: {
           legend: {
@@ -291,7 +286,10 @@ fetch(<?= json_encode($api_url) ?>)
       });
       bar.addEventListener('pointerup', e => {
         bar.releasePointerCapture(e.pointerId);
-        // Drill-down folgt in Task 4 (onHandle && !moved)
+        // Anfasser antippen (ohne Ziehen) → Tagesansicht des gewählten Zeitpunkts
+        if (onHandle && !moved && !isDailyPage && data.dates && data.dates[scrubIndex]) {
+          window.location = base + '/daily.php?date=' + data.dates[scrubIndex];
+        }
       });
 
       window.addEventListener('resize', render);
