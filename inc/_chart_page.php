@@ -588,21 +588,56 @@ document.getElementById('print-btn').addEventListener('click', () => {
   });
 })();
 
-// Swipe navigation
+// Swipe-Navigation + leichte Slide-Animation (nur im Graph-Band)
 (function() {
-  const prevUrl = <?= json_encode($prev_url) ?>;
-  const nextUrl = <?= json_encode($next_url) ?>;
-  let x0 = 0, y0 = 0;
-  document.addEventListener('touchstart', e => {
-    x0 = e.touches[0].clientX;
-    y0 = e.touches[0].clientY;
+  const container = document.querySelector('.chart-container');
+  if (!container) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const THRESH = 60;
+  let x0 = 0, y0 = 0, dragging = false, dx = 0;
+
+  // Slide-in beim Laden (Richtung aus dem vorherigen Blättern)
+  const from = sessionStorage.getItem('energieSlideFrom');
+  if (from) {
+    sessionStorage.removeItem('energieSlideFrom');
+    if (!reduce) {
+      container.style.transition = 'none';
+      container.style.transform  = 'translateX(' + (from === 'next' ? '100%' : '-100%') + ')';
+      requestAnimationFrame(() => {
+        container.style.transition = 'transform 0.18s ease-out';
+        container.style.transform  = 'translateX(0)';
+      });
+    }
+  }
+
+  container.addEventListener('touchstart', e => {
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+    dragging = false; dx = 0;
+    container.style.transition = 'none';
   }, { passive: true });
-  document.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - x0;
-    const dy = e.changedTouches[0].clientY - y0;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx < 0 && nextUrl) window.location = nextUrl;
-    if (dx > 0 && prevUrl) window.location = prevUrl;
+
+  container.addEventListener('touchmove', e => {
+    dx = e.touches[0].clientX - x0;
+    const dy = e.touches[0].clientY - y0;
+    if (!dragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) dragging = true;
+    if (dragging && !reduce) container.style.transform = 'translateX(' + dx + 'px)';
+  }, { passive: true });
+
+  container.addEventListener('touchend', () => {
+    if (!dragging) return;
+    const goNext = dx < 0 && nextUrl;
+    const goPrev = dx > 0 && prevUrl;
+    if (Math.abs(dx) > THRESH && (goNext || goPrev)) {
+      const url = goNext ? nextUrl : prevUrl;
+      sessionStorage.setItem('energieSlideFrom', goNext ? 'next' : 'prev');
+      if (reduce) { window.location = url; return; }
+      container.style.transition = 'transform 0.18s ease-out';
+      container.style.transform  = 'translateX(' + (goNext ? '-100%' : '100%') + ')';
+      setTimeout(() => { window.location = url; }, 180);
+    } else {
+      container.style.transition = 'transform 0.18s ease-out';
+      container.style.transform  = 'translateX(0)';
+    }
   }, { passive: true });
 })();
 </script>

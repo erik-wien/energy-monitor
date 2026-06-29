@@ -140,6 +140,7 @@ main { padding: 1.5rem 2rem; }
     height: 60vh;
     min-height: 300px;
     position: relative;
+    touch-action: pan-y;   /* vertikal scrollt die Seite, horizontal = Swipe-Blättern */
     animation: chart-fade-in 0.3s ease-out both;
 }
 
