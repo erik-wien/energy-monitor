@@ -154,19 +154,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endforeach; unset($_SESSION['alerts']); ?>
 
         <?php
-        $activeTab = 'profilbild';
-        if (!empty($errors['email']))        { $activeTab = 'email'; }
-        elseif (!empty($errors['theme']))    { $activeTab = 'theme'; }
-        elseif (!empty($errors['avatar']))   { $activeTab = 'profilbild'; }
+        $activeTab = 'profil';
+        if (!empty($errors['theme'])) { $activeTab = 'theme'; }
+        // email / avatar errors keep the user on the merged 'profil' tab (default)
         ?>
 
         <nav class="tab-bar" role="tablist" aria-label="Einstellungen">
-            <button type="button" class="tab-btn<?= $activeTab === 'profilbild' ? ' active' : '' ?>"
-                    id="tab-profilbild" role="tab" aria-controls="panel-profilbild"
-                    aria-selected="<?= $activeTab === 'profilbild' ? 'true' : 'false' ?>" data-tab="profilbild">Profilbild</button>
-            <button type="button" class="tab-btn<?= $activeTab === 'email' ? ' active' : '' ?>"
-                    id="tab-email" role="tab" aria-controls="panel-email"
-                    aria-selected="<?= $activeTab === 'email' ? 'true' : 'false' ?>" data-tab="email">E-Mail</button>
+            <button type="button" class="tab-btn<?= $activeTab === 'profil' ? ' active' : '' ?>"
+                    id="tab-profil" role="tab" aria-controls="panel-profil"
+                    aria-selected="<?= $activeTab === 'profil' ? 'true' : 'false' ?>" data-tab="profil">Profil</button>
             <button type="button" class="tab-btn<?= $activeTab === 'theme' ? ' active' : '' ?>"
                     id="tab-theme" role="tab" aria-controls="panel-theme"
                     aria-selected="<?= $activeTab === 'theme' ? 'true' : 'false' ?>" data-tab="theme">Design</button>
@@ -175,8 +171,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     aria-selected="<?= $activeTab === 'bedienung' ? 'true' : 'false' ?>" data-tab="bedienung">Bedienung</button>
         </nav>
 
-        <section id="panel-profilbild" class="tab-panel<?= $activeTab !== 'profilbild' ? ' hidden' : '' ?>"
-                 role="tabpanel" aria-labelledby="tab-profilbild"<?= $activeTab !== 'profilbild' ? ' hidden' : '' ?>>
+        <section id="panel-profil" class="tab-panel<?= $activeTab !== 'profil' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-profil"<?= $activeTab !== 'profil' ? ' hidden' : '' ?>>
             <link rel="stylesheet" href="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.css">
             <div class="pref-card">
                 <div class="pref-card-hdr">Profilbild</div>
@@ -229,10 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             })();
             </script>
-        </section>
 
-        <section id="panel-email" class="tab-panel<?= $activeTab !== 'email' ? ' hidden' : '' ?>"
-                 role="tabpanel" aria-labelledby="tab-email"<?= $activeTab !== 'email' ? ' hidden' : '' ?>>
             <div class="pref-card">
                 <div class="pref-card-hdr">E-Mail-Adresse</div>
                 <div class="pref-card-body">
