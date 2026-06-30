@@ -16,6 +16,9 @@ $currentEmail = htmlspecialchars(
 );
 $stmt->close();
 
+// Chart swipe-navigation preference (en_preferences; defaults to on)
+$swipeNav = en_swipe_nav_enabled($pdo, $userId);
+
 $errors = [];
 
 // ── POST handler ──────────────────────────────────────────────────────────────
@@ -117,6 +120,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // ── Chart swipe navigation ────────────────────────────────────────────────
+    if ($action === 'change_swipe') {
+        $on  = isset($_POST['swipe_nav']) ? 1 : 0;
+        $upd = $pdo->prepare(
+            'INSERT INTO en_preferences (user_id, swipe_nav) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE swipe_nav = VALUES(swipe_nav)'
+        );
+        $upd->execute([$userId, $on]);
+        appendLog($con, 'prefs', 'Swipe navigation set to ' . $on);
+        addAlert('success', 'Einstellung gespeichert.');
+        header('Location: preferences.php'); exit;
+    }
+
     // ── Revoke all remember-me tokens ─────────────────────────────────────────
     if ($action === 'revoke_all_devices') {
         if (auth_remember_revoke_all($con)) {
@@ -154,6 +170,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="button" class="tab-btn<?= $activeTab === 'theme' ? ' active' : '' ?>"
                     id="tab-theme" role="tab" aria-controls="panel-theme"
                     aria-selected="<?= $activeTab === 'theme' ? 'true' : 'false' ?>" data-tab="theme">Design</button>
+            <button type="button" class="tab-btn<?= $activeTab === 'bedienung' ? ' active' : '' ?>"
+                    id="tab-bedienung" role="tab" aria-controls="panel-bedienung"
+                    aria-selected="<?= $activeTab === 'bedienung' ? 'true' : 'false' ?>" data-tab="bedienung">Bedienung</button>
         </nav>
 
         <section id="panel-profilbild" class="tab-panel<?= $activeTab !== 'profilbild' ? ' hidden' : '' ?>"
@@ -264,6 +283,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label for="th_dark">🌙 Dunkel</label>
                         </div>
                         <button class="btn btn-outline-success" type="submit">Speichern</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <section id="panel-bedienung" class="tab-panel<?= $activeTab !== 'bedienung' ? ' hidden' : '' ?>"
+                 role="tabpanel" aria-labelledby="tab-bedienung"<?= $activeTab !== 'bedienung' ? ' hidden' : '' ?>>
+            <div class="pref-card">
+                <div class="pref-card-hdr">Bedienung</div>
+                <div class="pref-card-body">
+                    <form method="post" action="preferences.php">
+                        <?= csrf_input() ?>
+                        <input type="hidden" name="action" value="change_swipe">
+                        <label style="display:flex;gap:.6rem;align-items:flex-start;cursor:pointer">
+                            <input type="checkbox" name="swipe_nav" value="1" <?= $swipeNav ? 'checked' : '' ?>
+                                   style="margin-top:.2rem;flex:0 0 auto">
+                            <span>
+                                <strong>Wischen zum Bl&auml;ttern</strong><br>
+                                <span class="text-muted">Auf Touchger&auml;ten durch horizontales Wischen über dem
+                                Graphen zwischen Tagen/Wochen/Monaten bl&auml;ttern. Aus = nur die Pfeil-Buttons
+                                und das Lineal zum Ablesen.</span>
+                            </span>
+                        </label>
+                        <button class="btn btn-outline-danger" type="submit" style="margin-top:.9rem">Speichern</button>
                     </form>
                 </div>
             </div>

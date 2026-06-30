@@ -18,3 +18,19 @@ try {
     http_response_code(500);
     die(json_encode(['error' => $e->getMessage()]));
 }
+
+/**
+ * Whether the chart swipe-to-page gesture is enabled for this user.
+ * Defaults to enabled (no row yet); resilient if the column is missing
+ * (e.g. migration not yet applied) so pages never fatal over a preference.
+ */
+function en_swipe_nav_enabled(PDO $pdo, int $userId): bool {
+    try {
+        $stmt = $pdo->prepare('SELECT swipe_nav FROM en_preferences WHERE user_id = ?');
+        $stmt->execute([$userId]);
+        $row = $stmt->fetch();
+        return $row === false ? true : (bool) $row['swipe_nav'];
+    } catch (PDOException $e) {
+        return true;
+    }
+}

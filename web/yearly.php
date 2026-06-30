@@ -111,6 +111,7 @@ render_header($page_type);
 <script nonce="<?= $_cspNonce ?>">
 const periodLabel = <?= json_encode($period_label) ?>;
 const base        = <?= json_encode($base) ?>;
+const swipeNavEnabled = <?= en_swipe_nav_enabled($pdo, (int) $_SESSION['id']) ? 'true' : 'false' ?>;
 
 let _printHTML = null;
 let _blobUrl   = null;
@@ -468,6 +469,7 @@ document.getElementById('print-btn').addEventListener('click', () => {
 
 // Swipe-Navigation + leichte Slide-Animation (nur im Graph-Band)
 (function() {
+  if (!swipeNavEnabled) return;
   const prevUrl = <?= json_encode($prev_url) ?>;
   const nextUrl = <?= json_encode($next_url) ?>;
   const container = document.querySelector('.chart-container');
