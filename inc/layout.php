@@ -146,7 +146,7 @@ function render_header(string $page_type): void
     </div>
     <div class="import-dialog-btns">
         <button class="btn" id="imp-cancel">Abbrechen</button>
-        <button class="btn btn-outline-success" id="imp-confirm">Importieren</button>
+        <button class="btn btn-outline-danger" id="imp-confirm">Importieren</button>
     </div>
 </dialog>
 <?php endif; ?>

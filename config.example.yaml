@@ -29,6 +29,7 @@ app:
   base_url: http://energie.test
   env: local
 APP_CODE: energie
+cron_token: 3e583db70a376a0740a199b5388f870e
 hofer:
   username: fu.armin@gmail.com
   password: your_password

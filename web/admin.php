@@ -37,30 +37,30 @@ render_header('admin');
 
         <div id="adminAlerts"></div>
 
-        <nav class="tab-bar" role="tablist" aria-label="Administration">
-            <button type="button" class="tab-btn"
+        <nav class="app-tabs" role="tablist" aria-label="Administration">
+            <button type="button" class="app-tab"
                     id="tab-params" role="tab" aria-controls="panel-params"
                     aria-selected="false" data-tab="params">App-Parameter</button>
-            <button type="button" class="tab-btn active"
+            <button type="button" class="app-tab active"
                     id="tab-users" role="tab" aria-controls="panel-users"
                     aria-selected="true" data-tab="users">Benutzerverwaltung</button>
-            <button type="button" class="tab-btn"
+            <button type="button" class="app-tab"
                     id="tab-log" role="tab" aria-controls="panel-log"
                     aria-selected="false" data-tab="log">Log</button>
         </nav>
 
-        <section id="panel-params" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-params">
-            <div class="card">
-                <div class="card-header card-header-split">
-                    <h2 class="card-title">Spot-Preise laden</h2>
+        <section id="panel-params" class="app-tab-panel" hidden role="tabpanel" aria-labelledby="tab-params">
+            <div class="app-card">
+                <div class="app-card-header app-card-header-split">
+                    <h2 class="app-card-heading">Spot-Preise laden</h2>
                 </div>
-                <div class="card-body">
+                <div class="app-card-body">
                     <p class="text-muted" style="margin-bottom:1rem">
                         Lädt alle Monate, für die Verbrauchsdaten vorhanden, aber noch keine
                         Spotpreise importiert sind, von der Hofer&nbsp;Grünstrom-API.
                     </p>
                     <form id="epexForm">
-                        <button type="submit" class="btn btn-outline-success" id="epexSubmit">
+                        <button type="submit" class="btn btn-outline-danger" id="epexSubmit">
                             Fehlende Spot-Preise laden
                         </button>
                     </form>
@@ -68,7 +68,7 @@ render_header('admin');
             </div>
         </section>
 
-        <section id="panel-users" class="tab-panel" role="tabpanel" aria-labelledby="tab-users">
+        <section id="panel-users" class="app-tab-panel" role="tabpanel" aria-labelledby="tab-users">
             <?php \Erikr\Chrome\Admin\UsersTab::render([
                 'users'   => $users,
                 'total'   => $total,
@@ -80,7 +80,7 @@ render_header('admin');
             ]); ?>
         </section>
 
-        <section id="panel-log" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-log">
+        <section id="panel-log" class="app-tab-panel" hidden role="tabpanel" aria-labelledby="tab-log">
             <?php \Erikr\Chrome\Admin\LogTab::render(); ?>
         </section>
 

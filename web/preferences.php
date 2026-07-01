@@ -150,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="pref-section">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>
-            <div class="alert alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"><?= $msg ?></div>
+            <div class="app-alert app-alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"><?= $msg ?></div>
         <?php endforeach; unset($_SESSION['alerts']); ?>
 
         <?php
@@ -159,19 +159,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // email / avatar errors keep the user on the merged 'profil' tab (default)
         ?>
 
-        <nav class="tab-bar" role="tablist" aria-label="Einstellungen">
-            <button type="button" class="tab-btn<?= $activeTab === 'profil' ? ' active' : '' ?>"
+        <nav class="app-tabs" role="tablist" aria-label="Einstellungen">
+            <button type="button" class="app-tab<?= $activeTab === 'profil' ? ' active' : '' ?>"
                     id="tab-profil" role="tab" aria-controls="panel-profil"
                     aria-selected="<?= $activeTab === 'profil' ? 'true' : 'false' ?>" data-tab="profil">Profil</button>
-            <button type="button" class="tab-btn<?= $activeTab === 'theme' ? ' active' : '' ?>"
+            <button type="button" class="app-tab<?= $activeTab === 'theme' ? ' active' : '' ?>"
                     id="tab-theme" role="tab" aria-controls="panel-theme"
                     aria-selected="<?= $activeTab === 'theme' ? 'true' : 'false' ?>" data-tab="theme">Design</button>
-            <button type="button" class="tab-btn<?= $activeTab === 'bedienung' ? ' active' : '' ?>"
+            <button type="button" class="app-tab<?= $activeTab === 'bedienung' ? ' active' : '' ?>"
                     id="tab-bedienung" role="tab" aria-controls="panel-bedienung"
                     aria-selected="<?= $activeTab === 'bedienung' ? 'true' : 'false' ?>" data-tab="bedienung">Bedienung</button>
         </nav>
 
-        <section id="panel-profil" class="tab-panel<?= $activeTab !== 'profil' ? ' hidden' : '' ?>"
+        <section id="panel-profil" class="app-tab-panel"<?= $activeTab !== 'profil' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-profil"<?= $activeTab !== 'profil' ? ' hidden' : '' ?>>
             <link rel="stylesheet" href="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.css">
             <div class="pref-card">
@@ -186,23 +186,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <div class="modal" id="avatarCropModal" aria-hidden="true" role="dialog"
-                 style="display:none;position:fixed;inset:0;z-index:1050;background:rgba(0,0,0,.6);
+            <div class="app-modal-backdrop" id="avatarCropModal" aria-hidden="true" role="dialog" hidden
+                 style="position:fixed;inset:0;z-index:1050;background:rgba(0,0,0,.6);
                         align-items:center;justify-content:center;padding:1rem">
-                <div class="modal-dialog" style="max-width:560px;width:100%;background:var(--color-bg);
+                <div class="app-modal-dialog" style="max-width:560px;width:100%;background:var(--color-bg);
                      border:1px solid var(--color-border);border-radius:var(--radius);
                      box-shadow:var(--shadow-sm);display:flex;flex-direction:column;max-height:90vh">
-                    <div class="modal-header" style="padding:.75rem 1rem;border-bottom:1px solid var(--color-border)">
+                    <div style="padding:.75rem 1rem;border-bottom:1px solid var(--color-border)">
                         <strong>Profilbild zuschneiden</strong>
                     </div>
-                    <div class="modal-body" style="padding:1rem;overflow:auto;min-height:0">
+                    <div style="padding:1rem;overflow:auto;min-height:0">
                         <div style="max-height:60vh">
                             <img id="avatarCropImage" alt="" style="display:block;max-width:100%">
                         </div>
                     </div>
-                    <div class="modal-footer" style="padding:.75rem 1rem;border-top:1px solid var(--color-border);display:flex;gap:.5rem;justify-content:flex-end">
+                    <div style="padding:.75rem 1rem;border-top:1px solid var(--color-border);display:flex;gap:.5rem;justify-content:flex-end">
                         <button type="button" class="btn" id="avatarCropCancel">Abbrechen</button>
-                        <button type="button" class="btn btn-outline-success" id="avatarCropConfirm">Speichern</button>
+                        <button type="button" class="btn btn-outline-danger" id="avatarCropConfirm">Speichern</button>
                     </div>
                 </div>
             </div>
@@ -210,10 +210,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <script nonce="<?= $_cspNonce ?>" src="<?= $base ?>/css/shared/js/avatar-cropper.js"></script>
             <script nonce="<?= $_cspNonce ?>">
             (function () {
-                const modal = document.getElementById('avatarCropModal');
-                new MutationObserver(function () {
-                    modal.style.display = modal.classList.contains('show') ? 'flex' : 'none';
-                }).observe(modal, { attributes: true, attributeFilter: ['class'] });
                 initAvatarCropper({
                     fileInputId: 'avatarFile',
                     modalId:     'avatarCropModal',
@@ -234,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         Nach dem Speichern erhalten Sie einen Bestätigungslink an die neue Adresse.
                     </p>
                     <?php if (!empty($errors['email'])): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($errors['email'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="app-alert app-alert-danger"><?= htmlspecialchars($errors['email'], ENT_QUOTES, 'UTF-8') ?></div>
                     <?php endif; ?>
                     <form method="post" action="preferences.php">
                         <?= csrf_input() ?>
@@ -250,19 +246,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="password" id="emailPassword" name="email_password"
                                    class="form-control" autocomplete="current-password" required>
                         </div>
-                        <button class="btn btn-outline-success" type="submit">Bestätigungslink senden</button>
+                        <button class="btn btn-outline-danger" type="submit">Bestätigungslink senden</button>
                     </form>
                 </div>
             </div>
         </section>
 
-        <section id="panel-theme" class="tab-panel<?= $activeTab !== 'theme' ? ' hidden' : '' ?>"
+        <section id="panel-theme" class="app-tab-panel"<?= $activeTab !== 'theme' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-theme"<?= $activeTab !== 'theme' ? ' hidden' : '' ?>>
             <div class="pref-card">
                 <div class="pref-card-hdr">Design</div>
                 <div class="pref-card-body">
                     <?php if (!empty($errors['theme'])): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($errors['theme'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="app-alert app-alert-danger"><?= htmlspecialchars($errors['theme'], ENT_QUOTES, 'UTF-8') ?></div>
                     <?php endif; ?>
                     <form method="post" action="preferences.php">
                         <?= csrf_input() ?>
@@ -275,13 +271,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="radio" name="theme" id="th_dark"  value="dark"  <?= $theme === 'dark'  ? 'checked' : '' ?>>
                             <label for="th_dark">🌙 Dunkel</label>
                         </div>
-                        <button class="btn btn-outline-success" type="submit">Speichern</button>
+                        <button class="btn btn-outline-danger" type="submit">Speichern</button>
                     </form>
                 </div>
             </div>
         </section>
 
-        <section id="panel-bedienung" class="tab-panel<?= $activeTab !== 'bedienung' ? ' hidden' : '' ?>"
+        <section id="panel-bedienung" class="app-tab-panel"<?= $activeTab !== 'bedienung' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-bedienung"<?= $activeTab !== 'bedienung' ? ' hidden' : '' ?>>
             <div class="pref-card">
                 <div class="pref-card-hdr">Bedienung</div>

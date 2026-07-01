@@ -44,7 +44,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
     <div class="tiles">
 
         <a class="tile" href="<?= $base ?>/daily.php?date=<?= htmlspecialchars($latest) ?>">
-            <div class="icon">📅</div>
+            <div class="tile-icon">📅</div>
             <div class="period"><?= $latest === date('Y-m-d') ? 'Heute' : 'Letzter Tag' ?></div>
             <h2><?= date('D, d.m.Y', strtotime($latest)) ?></h2>
             <div class="kpi">
@@ -55,7 +55,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
         </a>
 
         <a class="tile" href="<?= $base ?>/weekly.php?year=<?= $iso_year ?>&week=<?= $iso_week ?>">
-            <div class="icon">📊</div>
+            <div class="tile-icon">📊</div>
             <div class="period">Letzte 7 Tage</div>
             <h2>KW<?= $iso_week ?> · <?= date('d.m', strtotime($week['from_day'])) ?>–<?= date('d.m.y', strtotime($week['to_day'])) ?></h2>
             <div class="kpi">
@@ -66,7 +66,7 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
         </a>
 
         <a class="tile" href="<?= $base ?>/monthly.php?year=<?= $prev_year ?>&month=<?= $prev_month ?>">
-            <div class="icon">📈</div>
+            <div class="tile-icon">📈</div>
             <div class="period">Letzte 30 Tage</div>
             <h2><?= date('F Y', mktime(0,0,0,$prev_month,1,$prev_year)) ?></h2>
             <div class="kpi">

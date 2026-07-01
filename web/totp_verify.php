@@ -68,13 +68,13 @@ unset($_SESSION['alerts']);
         </p>
 
         <?php foreach ($alerts as [$type, $msg]): ?>
-            <div class="alert alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>">
+            <div class="app-alert app-alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>">
                 <?= $msg ?>
             </div>
         <?php endforeach; ?>
 
         <?php if ($error !== ''): ?>
-            <div class="alert alert-danger">
+            <div class="app-alert app-alert-danger">
                 <?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?>
             </div>
         <?php endif; ?>
