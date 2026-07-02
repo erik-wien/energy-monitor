@@ -158,29 +158,29 @@ elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
     <div class="pref-section-wide">
 
         <?php foreach ($_SESSION['alerts'] ?? [] as [$type, $msg]): ?>
-            <div class="alert alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"><?= $msg ?></div>
+            <div class="app-alert app-alert-<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"><?= $msg ?></div>
         <?php endforeach; unset($_SESSION['alerts']); ?>
 
-        <nav class="tab-bar" role="tablist" aria-label="Sicherheit">
-            <button type="button" class="tab-btn<?= $activeTab === 'kennwort' ? ' active' : '' ?>"
+        <nav class="app-tabs" role="tablist" aria-label="Sicherheit">
+            <button type="button" class="app-tab<?= $activeTab === 'kennwort' ? ' active' : '' ?>"
                     id="tab-kennwort" role="tab" aria-controls="panel-kennwort"
                     aria-selected="<?= $activeTab === 'kennwort' ? 'true' : 'false' ?>" data-tab="kennwort">Kennwort ändern</button>
-            <button type="button" class="tab-btn<?= $activeTab === '2fa' ? ' active' : '' ?>"
+            <button type="button" class="app-tab<?= $activeTab === '2fa' ? ' active' : '' ?>"
                     id="tab-2fa" role="tab" aria-controls="panel-2fa"
                     aria-selected="<?= $activeTab === '2fa' ? 'true' : 'false' ?>" data-tab="2fa">Zwei-Faktor-Authentifizierung</button>
-            <button type="button" class="tab-btn<?= $activeTab === 'sitzungen' ? ' active' : '' ?>"
+            <button type="button" class="app-tab<?= $activeTab === 'sitzungen' ? ' active' : '' ?>"
                     id="tab-sitzungen" role="tab" aria-controls="panel-sitzungen"
                     aria-selected="<?= $activeTab === 'sitzungen' ? 'true' : 'false' ?>" data-tab="sitzungen">Aktive Sitzungen</button>
         </nav>
 
         <!-- Kennwort -->
-        <section id="panel-kennwort" class="tab-panel<?= $activeTab !== 'kennwort' ? ' hidden' : '' ?>"
+        <section id="panel-kennwort" class="app-tab-panel"<?= $activeTab !== 'kennwort' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-kennwort"<?= $activeTab !== 'kennwort' ? ' hidden' : '' ?>>
             <div class="pref-card">
                 <div class="pref-card-hdr">Kennwort ändern</div>
                 <div class="pref-card-body">
                     <?php if (!empty($errors['password'])): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($errors['password'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="app-alert app-alert-danger"><?= htmlspecialchars($errors['password'], ENT_QUOTES, 'UTF-8') ?></div>
                     <?php endif; ?>
                     <form method="post" action="security.php">
                         <?= csrf_input() ?>
@@ -200,20 +200,20 @@ elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
                             <input type="password" id="newPassword2" name="newPassword2"
                                    class="form-control" autocomplete="new-password" minlength="8" required>
                         </div>
-                        <button class="btn btn-outline-success" type="submit">Speichern</button>
+                        <button class="btn btn-outline-danger" type="submit">Speichern</button>
                     </form>
                 </div>
             </div>
         </section>
 
         <!-- Zwei-Faktor-Authentifizierung -->
-        <section id="panel-2fa" class="tab-panel<?= $activeTab !== '2fa' ? ' hidden' : '' ?>"
+        <section id="panel-2fa" class="app-tab-panel"<?= $activeTab !== '2fa' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-2fa"<?= $activeTab !== '2fa' ? ' hidden' : '' ?>>
             <div class="pref-card">
                 <div class="pref-card-hdr">Zwei-Faktor-Authentifizierung</div>
                 <div class="pref-card-body">
                     <?php if (!empty($errors['totp'])): ?>
-                        <div class="alert alert-danger">
+                        <div class="app-alert app-alert-danger">
                             <?= htmlspecialchars($errors['totp'], ENT_QUOTES, 'UTF-8') ?>
                         </div>
                     <?php endif; ?>
@@ -248,7 +248,7 @@ elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
                                        autocomplete="one-time-code" required autofocus
                                        class="totp-code-input" style="max-width:200px;">
                             </div>
-                            <button type="submit" class="btn btn-outline-success">Bestätigen</button>
+                            <button type="submit" class="btn btn-outline-danger">Bestätigen</button>
                         </form>
 
                     <?php else: ?>
@@ -259,7 +259,7 @@ elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
                         <form method="post" action="security.php">
                             <?= csrf_input() ?>
                             <input type="hidden" name="action" value="totp_start">
-                            <button type="submit" class="btn btn-outline-success">2FA aktivieren</button>
+                            <button type="submit" class="btn btn-outline-danger">2FA aktivieren</button>
                         </form>
                     <?php endif; ?>
                 </div>
@@ -267,7 +267,7 @@ elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
         </section>
 
         <!-- Aktive Sitzungen -->
-        <section id="panel-sitzungen" class="tab-panel<?= $activeTab !== 'sitzungen' ? ' hidden' : '' ?>"
+        <section id="panel-sitzungen" class="app-tab-panel"<?= $activeTab !== 'sitzungen' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-sitzungen"<?= $activeTab !== 'sitzungen' ? ' hidden' : '' ?>>
             <div class="pref-card">
                 <div class="pref-card-hdr">Aktive Sitzungen</div>
@@ -293,7 +293,7 @@ elseif (!empty($errors['password'])) { $activeTab = 'kennwort'; }
                                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" class="icon-info-circle" tabindex="0" role="img"><title><?= htmlspecialchars($s['user_agent'], ENT_QUOTES, 'UTF-8') ?></title><circle cx="8" cy="8" r="7" fill="currentColor"/><text x="8" y="12" text-anchor="middle" font-family="'Times New Roman', Times, serif" font-size="11" font-weight="bold" font-style="italic" fill="#fff">i</text></svg>
                                                 <?php endif; ?>
                                                 <?php if ($s['is_current']): ?>
-                                                    <span class="badge badge-info">Diese Sitzung</span>
+                                                    <span class="app-badge app-badge-info">Diese Sitzung</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td><code><?= htmlspecialchars($s['ip'], ENT_QUOTES, 'UTF-8') ?></code></td>

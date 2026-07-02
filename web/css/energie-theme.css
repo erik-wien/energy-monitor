@@ -1,6 +1,8 @@
 /* energie-theme.css — Energie color palette.
    Overrides shared/theme.css variables. Dark-first (default).
-   Adds project-specific: --color-accent, --color-green, --color-blue,
+   Accent inherits the canonical Jardyx red (#e2001a) from shared/theme.css —
+   no per-app accent override (only the logo tint differs, via --logo-color).
+   Adds project-specific: --color-green, --color-blue,
    --color-warning (notif/import marker), and chart-pill tokens.
 */
 
@@ -11,8 +13,8 @@
     --color-text:    #e2e8f0;
     --color-muted:   #718096;
     --color-border:  #2d3748;
-    --color-accent:    #e94560;
     --color-accent-fg: #ffffff;
+    --logo-color:      #d6a733; /* per-app brand logo tint (config color) */
     --color-green:   #68d391;
     --color-blue:    #63b3ed;
     --color-warning:            #ecc94b;
@@ -28,8 +30,8 @@
     --color-text:    #1a202c;
     --color-muted:   #718096;
     --color-border:  #cbd5e0;
-    --color-accent:    #e94560;
     --color-accent-fg: #ffffff;
+    --logo-color:      #d6a733; /* per-app brand logo tint (config color) */
     --color-green:   #276749;
     --color-blue:    #2b6cb0;
     --color-warning:            #b7791f;
@@ -46,8 +48,8 @@
         --color-text:    #1a202c;
         --color-muted:   #718096;
         --color-border:  #cbd5e0;
-        --color-accent:    #e94560;
     --color-accent-fg: #ffffff;
+    --logo-color:      #d6a733; /* per-app brand logo tint (config color) */
         --color-green:   #276749;
         --color-blue:    #2b6cb0;
         --color-warning:            #b7791f;
