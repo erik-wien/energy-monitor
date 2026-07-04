@@ -150,6 +150,8 @@ echo "Rsyncing to {$sshTarget}:{$remoteBase} ...\n";
 // leaves excluded paths alone — which is what we want for runtime directories
 // like scrapes/, _Archiv/, data/ that exist only on the server.
 $rsyncCmd = ['rsync', '-avz', '--delete', '--copy-links'];
+// Protect erikr/auth mail templates from the '*.md' exclude below (first-match-wins).
+$rsyncCmd[] = '--include=**/templates/email/*.md';
 foreach ($rsyncExcludes as $p) {
     $rsyncCmd[] = '--exclude=' . $p;
 }
