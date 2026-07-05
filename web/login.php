@@ -3,6 +3,15 @@ require_once __DIR__ . '/../inc/initialize.php';
 require_once __DIR__ . '/../inc/layout.php';
 $base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
 
+// Prod: kein eigenes Login-Formular — zum zentralen Login-Host umleiten.
+$__host = strtolower(preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? '')));
+if (str_ends_with($__host, '.eriks.cloud')) {
+    $__scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $__return = $__scheme . '://' . $_SERVER['HTTP_HOST'] . '/';
+    header('Location: ' . AUTH_CENTRAL_LOGIN_URL . '?return=' . urlencode($__return));
+    exit;
+}
+
 if (!empty($_SESSION['loggedin'])) {
     header('Location: index.php'); exit;
 }
