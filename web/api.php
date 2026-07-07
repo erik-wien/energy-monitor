@@ -426,8 +426,14 @@ if ($type === 'daily') {
         echo json_encode(['ok' => true, 'count' => 0, 'rows' => 0]);
         exit;
     }
-    $script     = $root . '/energie.py';
-    $usePython  = file_exists($script) && function_exists('proc_open');
+    $script = $root . '/energie.py';
+    // python3 nur noch für XLSX nötig; robust erkennen statt hartkodiertem Pfad
+    // (akadbrain = /opt/homebrew, Intel-Mac = /usr/local, System = /usr/bin).
+    $pyBin = null;
+    foreach (['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'] as $cand) {
+        if (@is_executable($cand)) { $pyBin = $cand; break; }
+    }
+    $canPython = $pyBin && file_exists($script) && function_exists('proc_open');
 
     $log      = '';
     $ok       = true;
@@ -435,29 +441,16 @@ if ($type === 'daily') {
     $existing = 0;
     $total    = 0;
 
-    if ($usePython) {
-        // Use Python pipeline (local dev / akadbrain).
-        $configPath = energie_config_path();
-        foreach ($files as $file) {
-            $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-            $proc = proc_open(['/usr/local/bin/python3', $script, '--config', $configPath, 'import-csv', $file], $desc, $pipes, $root);
-            $out  = $proc ? stream_get_contents($pipes[1]) : '';
-            $err  = $proc ? stream_get_contents($pipes[2]) : '';
-            if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
-            $code = $proc ? proc_close($proc) : 1;
-            $log .= $out . ($err ? "\nSTDERR: $err" : '');
-            if ($code !== 0) { $ok = false; }
-            // "✅ Imported N new, M existing, T total consumption rows"
-            if (preg_match('/Imported (\d+) new, (\d+) existing, (\d+) total/', $out, $m)) {
-                $imported += (int) $m[1];
-                $existing += (int) $m[2];
-                $total    += (int) $m[3];
-            }
-        }
-    } else {
-        // PHP-native fallback (world4you: no proc_open / no Python).
-        // Fetch missing EPEX prices first so spot_ct is populated before cost_brutto is calculated.
-        require_once __DIR__ . '/../inc/epex_importer.php';
+    // CSV wird ÜBERALL PHP-nativ importiert (robust, ohne Python-Deps —
+    // energie.py braucht yaml/requests, die auf akadbrain/world4you fehlen).
+    // Python bleibt nur für XLSX. EPEX zuerst, damit spot_ct gesetzt ist,
+    // bevor cost_brutto berechnet wird.
+    require_once __DIR__ . '/../inc/epex_importer.php';
+    $hasCsv = (bool) array_filter(
+        $files,
+        static fn($f) => strtolower(pathinfo($f, PATHINFO_EXTENSION)) === 'csv'
+    );
+    if ($hasCsv) {
         try {
             $epex = php_fetch_missing_epex($pdo);
             if ($epex['rows'] > 0) {
@@ -467,12 +460,11 @@ if ($type === 'daily') {
         } catch (Exception $e) {
             $log .= 'EPEX-Abruf fehlgeschlagen: ' . $e->getMessage() . "\n";
         }
-        foreach ($files as $file) {
-            if (strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'csv') {
-                $log .= basename($file) . ": XLSX-Import nur mit Python verfügbar.\n";
-                $ok = false;
-                continue;
-            }
+    }
+
+    foreach ($files as $file) {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        if ($ext === 'csv') {
             try {
                 $result    = php_import_csv($pdo, $file, $archiv);
                 $imported += $result['inserted'];
@@ -483,6 +475,25 @@ if ($type === 'daily') {
                 $ok   = false;
                 $log .= basename($file) . ': Fehler: ' . $e->getMessage() . "\n";
             }
+        } elseif ($canPython) {
+            // XLSX → Python-Pipeline (nur wo ein python3 mit Deps vorhanden ist).
+            $configPath = energie_config_path();
+            $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+            $proc = proc_open([$pyBin, $script, '--config', $configPath, 'import-csv', $file], $desc, $pipes, $root);
+            $out  = $proc ? stream_get_contents($pipes[1]) : '';
+            $err  = $proc ? stream_get_contents($pipes[2]) : '';
+            if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
+            $code = $proc ? proc_close($proc) : 1;
+            $log .= $out . ($err ? "\nSTDERR: $err" : '');
+            if ($code !== 0) { $ok = false; }
+            if (preg_match('/Imported (\d+) new, (\d+) existing, (\d+) total/', $out, $m)) {
+                $imported += (int) $m[1];
+                $existing += (int) $m[2];
+                $total    += (int) $m[3];
+            }
+        } else {
+            $log .= basename($file) . ": XLSX-Import nur mit Python verfügbar.\n";
+            $ok = false;
         }
     }
 
