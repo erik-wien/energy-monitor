@@ -37,12 +37,12 @@ function render_page_head(string $title, string $extraHead = ''): void
     <link rel="stylesheet" href="<?= $base ?>/css/energie.css">
     <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
     <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
-    <link rel="icon" type="image/x-icon" href="<?= $base ?>/assets/favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/assets/favicon-16x16.png">
-    <link rel="apple-touch-icon" href="<?= $base ?>/assets/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/assets/web-app-manifest-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/assets/web-app-manifest-512x512.png">
+    <link rel="icon" type="image/x-icon" href="<?= $base ?>/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= $base ?>/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="<?= $base ?>/favicon-16x16.png">
+    <link rel="apple-touch-icon" href="<?= $base ?>/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/web-app-manifest-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/web-app-manifest-512x512.png">
     <?php if ($extraHead !== '') echo $extraHead; ?>
 </head>
 <body>
