@@ -43,6 +43,7 @@ function render_page_head(string $title, string $extraHead = ''): void
     <link rel="apple-touch-icon" href="<?= $base ?>/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="<?= $base ?>/web-app-manifest-192x192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="<?= $base ?>/web-app-manifest-512x512.png">
+    <link rel="icon" type="image/png" sizes="1024x1024" href="<?= $base ?>/web-app-manifest-1024x1024.png">
     <?php if ($extraHead !== '') echo $extraHead; ?>
 </head>
 <body>
