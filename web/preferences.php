@@ -265,11 +265,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="hidden" name="action" value="change_theme">
                         <div class="btn-group">
                             <input type="radio" name="theme" id="th_light" value="light" <?= $theme === 'light' ? 'checked' : '' ?>>
-                            <label for="th_light">☀ Hell</label>
+                            <label for="th_light"><span class="ui-icon ui-icon-sun" aria-hidden="true"></span> Hell</label>
                             <input type="radio" name="theme" id="th_auto"  value="auto"  <?= $theme === 'auto'  ? 'checked' : '' ?>>
-                            <label for="th_auto">⬤ Auto</label>
+                            <label for="th_auto"><span class="ui-icon ui-icon-monitor" aria-hidden="true"></span> Auto</label>
                             <input type="radio" name="theme" id="th_dark"  value="dark"  <?= $theme === 'dark'  ? 'checked' : '' ?>>
-                            <label for="th_dark">🌙 Dunkel</label>
+                            <label for="th_dark"><span class="ui-icon ui-icon-moon" aria-hidden="true"></span> Dunkel</label>
                         </div>
                         <button class="btn btn-outline-danger" type="submit">Speichern</button>
                     </form>
