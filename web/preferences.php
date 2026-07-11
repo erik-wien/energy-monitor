@@ -173,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <section id="panel-profil" class="app-tab-panel"<?= $activeTab !== 'profil' ? ' hidden' : '' ?>
                  role="tabpanel" aria-labelledby="tab-profil"<?= $activeTab !== 'profil' ? ' hidden' : '' ?>>
-            <link rel="stylesheet" href="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.css">
+            <link rel="stylesheet" href="<?= $base ?>/css/shared/js/vendor/cropperjs/cropper.min.css<?= en_asset_v('css/shared/js/vendor/cropperjs/cropper.min.css') ?>">
             <div class="pref-card">
                 <div class="pref-card-hdr">Profilbild</div>
                 <div class="pref-card-body">

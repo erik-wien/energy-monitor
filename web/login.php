@@ -26,12 +26,12 @@ $nonce      = htmlspecialchars($_cspNonce ?? '', ENT_QUOTES, 'UTF-8');
   <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
   <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
   <link rel="apple-touch-icon" href="<?= $base ?>/apple-touch-icon.png">
-  <link rel="stylesheet" href="<?= $base ?>/css/shared/theme.css">
-  <link rel="stylesheet" href="<?= $base ?>/css/shared/reset.css">
-  <link rel="stylesheet" href="<?= $base ?>/css/shared/layout.css">
-  <link rel="stylesheet" href="<?= $base ?>/css/shared/components.css">
-  <link rel="stylesheet" href="<?= $base ?>/css/energie-theme.css">
-  <link rel="stylesheet" href="<?= $base ?>/css/energie.css">
+  <link rel="stylesheet" href="<?= $base ?>/css/shared/theme.css<?= en_asset_v('css/shared/theme.css') ?>">
+  <link rel="stylesheet" href="<?= $base ?>/css/shared/reset.css<?= en_asset_v('css/shared/reset.css') ?>">
+  <link rel="stylesheet" href="<?= $base ?>/css/shared/layout.css<?= en_asset_v('css/shared/layout.css') ?>">
+  <link rel="stylesheet" href="<?= $base ?>/css/shared/components.css<?= en_asset_v('css/shared/components.css') ?>">
+  <link rel="stylesheet" href="<?= $base ?>/css/energie-theme.css<?= en_asset_v('css/energie-theme.css') ?>">
+  <link rel="stylesheet" href="<?= $base ?>/css/energie.css<?= en_asset_v('css/energie.css') ?>">
 </head>
 <body class="login-page">
 <main class="login-main" id="main-content">

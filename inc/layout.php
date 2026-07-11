@@ -29,12 +29,12 @@ function render_page_head(string $title, string $extraHead = ''): void
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $pageTitle ?></title>
-    <link rel="stylesheet" href="<?= $base ?>/css/shared/theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/css/shared/reset.css">
-    <link rel="stylesheet" href="<?= $base ?>/css/shared/layout.css">
-    <link rel="stylesheet" href="<?= $base ?>/css/shared/components.css">
-    <link rel="stylesheet" href="<?= $base ?>/css/energie-theme.css">
-    <link rel="stylesheet" href="<?= $base ?>/css/energie.css">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/theme.css<?= en_asset_v('css/shared/theme.css') ?>">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/reset.css<?= en_asset_v('css/shared/reset.css') ?>">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/layout.css<?= en_asset_v('css/shared/layout.css') ?>">
+    <link rel="stylesheet" href="<?= $base ?>/css/shared/components.css<?= en_asset_v('css/shared/components.css') ?>">
+    <link rel="stylesheet" href="<?= $base ?>/css/energie-theme.css<?= en_asset_v('css/energie-theme.css') ?>">
+    <link rel="stylesheet" href="<?= $base ?>/css/energie.css<?= en_asset_v('css/energie.css') ?>">
     <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
     <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
     <link rel="icon" type="image/x-icon" href="<?= $base ?>/favicon.ico">

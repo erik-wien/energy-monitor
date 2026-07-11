@@ -62,3 +62,12 @@ admin_register_delete_cleanup(static function (mysqli $authCon, int $userId): vo
     $stmt = $pdo->prepare('DELETE FROM en_preferences WHERE user_id = ?');
     $stmt->execute([$userId]);
 });
+
+// Asset cache-busting: append ?v=<mtime> to local CSS so a redeployed shared
+// stylesheet busts browser + Cloudflare edge caches (they key on the full URL).
+if (!function_exists('en_asset_v')) {
+    function en_asset_v(string $rel): string {
+        $m = @filemtime(__DIR__ . '/../web/' . ltrim($rel, '/'));
+        return $m ? '?v=' . $m : '';
+    }
+}
