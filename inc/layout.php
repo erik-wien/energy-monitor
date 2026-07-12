@@ -322,11 +322,10 @@ function render_header(string $page_type): void
 function render_footer(): void
 {
     global $base;
-    $stage = in_array(strtolower(APP_ENV), ['local', 'localhost', 'dev', 'development', 'staging', 'akadbrain'], true) ? 'DEV' : 'PROD';
+    // Stage/owner/version aus dem Library-Default (Footer::deriveStage kennt
+    // akadbrain jetzt selbst; owner-Default = 'Erik R. Accart-Huemer') — TASK-19.
     Footer::render([
-        'base'    => $base,
-        'owner'   => 'Erik R. Accart-Huemer',
-        'version' => APP_VERSION . '.' . APP_BUILD . ' ' . $stage,
+        'base' => $base,
     ]);
     echo '</body></html>';
 }
