@@ -93,6 +93,7 @@ render_header('admin');
 window.CSRF = <?= json_encode($csrfToken) ?>;
 </script>
 <script src="<?= $base ?>/css/shared/js/admin.js" nonce="<?= $_cspNonce ?>"></script>
+<script type="module" src="<?= $base ?>/css/shared/js/dialog.js?v=<?= APP_VERSION . '.' . APP_BUILD ?>" nonce="<?= $_cspNonce ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr" nonce="<?= $_cspNonce ?>"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/de.js" nonce="<?= $_cspNonce ?>"></script>
 
@@ -180,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', async () => {
             const isDisabled  = btn.dataset.disabled === '1';
             const nextLabel   = isDisabled ? 'aktivieren' : 'deaktivieren';
-            if (!confirm('Benutzer «' + btn.dataset.username + '» ' + nextLabel + '?')) return;
+            if (!await window.confirmDialog('Benutzer «' + btn.dataset.username + '» ' + nextLabel + '?', { titel: 'Benutzer ' + nextLabel, okLabel: nextLabel.charAt(0).toUpperCase() + nextLabel.slice(1), gefahr: 'neutral' })) return;
             const res = await adminPost('admin_user_toggle_disabled', {
                 id: btn.dataset.id,
                 disabled: isDisabled ? '' : '1',
@@ -196,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.btn-reset').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Einladungs-/Reset-E-Mail an «' + btn.dataset.username + '» senden?')) return;
+            if (!await window.confirmDialog('Einladungs-/Reset-E-Mail an «' + btn.dataset.username + '» senden?', { titel: 'E-Mail senden', okLabel: 'Senden', gefahr: 'secondary' })) return;
             const res = await adminPost('admin_user_reset', { id: btn.dataset.id });
             showAlert(res.ok ? 'E-Mail versandt.' : (res.error || 'Fehler.'), res.ok ? 'success' : 'danger');
         });
@@ -204,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.btn-revoke-totp').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('2FA von «' + btn.dataset.username + '» widerrufen? Der Benutzer muss sich neu registrieren.')) return;
+            if (!await window.confirmDialog('2FA von «' + btn.dataset.username + '» widerrufen? Der Benutzer muss sich neu registrieren.', { titel: '2FA widerrufen', okLabel: 'Widerrufen', gefahr: 'secondary' })) return;
             const res = await adminPost('admin_user_revoke_totp', { id: btn.dataset.id });
             if (res.ok) {
                 showAlert('2FA widerrufen.', 'success');
@@ -217,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.btn-invalid-reset').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Fehlversuche (' + btn.dataset.count + ') für «' + btn.dataset.username + '» zurücksetzen?')) return;
+            if (!await window.confirmDialog('Fehlversuche (' + btn.dataset.count + ') für «' + btn.dataset.username + '» zurücksetzen?', { titel: 'Fehlversuche zurücksetzen', okLabel: 'Zurücksetzen', gefahr: 'secondary' })) return;
             const res = await adminPost('admin_user_reset_invalid', { id: btn.dataset.id });
             if (res.ok) {
                 showAlert('Fehlversuche zurückgesetzt.', 'success');
@@ -230,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Benutzer «' + btn.dataset.username + '» wirklich löschen?')) return;
+            if (!await window.confirmDialog('Benutzer «' + btn.dataset.username + '» wirklich löschen?', { titel: 'Benutzer löschen', okLabel: 'Löschen', gefahr: 'commit' })) return;
             const res = await adminPost('admin_user_delete', { id: btn.dataset.id });
             if (res.ok) {
                 showAlert('Gelöscht.', 'success');
