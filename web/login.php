@@ -24,7 +24,7 @@ $nonce      = htmlspecialchars($_cspNonce ?? '', ENT_QUOTES, 'UTF-8');
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anmelden &mdash; <?= htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8') ?></title>
   <meta name="theme-color" content="<?= htmlspecialchars(APP_COLOR, ENT_QUOTES) ?>">
-  <link rel="icon" type="image/svg+xml" href="<?= $base ?>/jardyx-favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="<?= $base ?>/css/shared/icons/jardyx_gelb.svg">
   <link rel="apple-touch-icon" href="<?= $base ?>/apple-touch-icon.png">
   <link rel="stylesheet" href="<?= $base ?>/css/shared/theme.css<?= en_asset_v('css/shared/theme.css') ?>">
   <link rel="stylesheet" href="<?= $base ?>/css/shared/reset.css<?= en_asset_v('css/shared/reset.css') ?>">
