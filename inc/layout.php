@@ -76,23 +76,9 @@ function render_header(string $page_type): void
         ['type' => 'yearly',  'label' => 'Jahr',
          'href' => 'yearly.php?year=' . $_nav_month_year . '&month=' . $_nav_month_month],
     ];
-    $_appsMenu = [
-        ['href' => 'https://wlmonitor.jardyx.com', 'label' => 'WL Monitor'],
-        ['href' => 'https://chat.jardyx.com',      'label' => 'Chat'],
-        ['href' => 'https://zeit.jardyx.com',      'label' => 'Zeit'],
-        ['href' => 'https://lastfm.jardyx.com',    'label' => 'Last.fm'],
-        ['href' => 'https://www.jardyx.com',       'label' => 'Suche'],
-    ];
-    if (defined('APP_ENV') && APP_ENV === 'local') {
-        $_appsMenu[] = ['label' => 'Test', 'adminOnly' => true, 'children' => [
-            ['href' => 'http://energie.test',   'label' => 'Energie'],
-            ['href' => 'http://wlmonitor.test', 'label' => 'WL Monitor'],
-            ['href' => 'http://chat.test',      'label' => 'Chat'],
-            ['href' => 'http://zeit.test',      'label' => 'Zeit'],
-            ['href' => 'http://lastfm.test',    'label' => 'Last.fm'],
-            ['href' => 'http://suche.test',     'label' => 'Suche'],
-        ]];
-    }
+    // Cross-App-Navigation aus der zentralen Registry (Erikr\Chrome\AppsMenu) —
+    // ersetzt die frühere handgepflegte Liste (TASK-19).
+    $_appsMenu = \Erikr\Chrome\AppsMenu::build('energie', APP_ENV);
 
     // Import toolbar — shown when CSVs are waiting or when admin can upload.
     $_scrapes_dir  = dirname(__DIR__) . '/scrapes';
