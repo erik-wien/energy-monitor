@@ -126,9 +126,14 @@ function render_header(string $page_type): void
         <span class="label">Neu</span>
         <span class="value new" id="imp-new">…</span>
     </div>
+    <div id="imp-format-warn" class="alert alert-warning" role="alert" hidden style="margin-top:1rem"></div>
     <div id="imp-epex-section" style="display:none;margin-top:1rem">
         <p id="imp-epex-label" style="font-size:.85rem;color:var(--color-text-muted);margin:0 0 .4rem"></p>
         <progress id="imp-epex-bar" style="width:100%" value="0" max="1"></progress>
+    </div>
+    <div id="imp-csv-section" style="display:none;margin-top:1rem">
+        <p id="imp-csv-label" style="font-size:.85rem;color:var(--color-text-muted);margin:0 0 .4rem"></p>
+        <progress id="imp-csv-bar" style="width:100%" value="0" max="1"></progress>
     </div>
     <div class="import-dialog-btns">
         <button class="btn" id="imp-cancel">Abbrechen</button>
@@ -155,29 +160,37 @@ function render_header(string $page_type): void
                 let msg = typeof _r.imported === 'number'
                     ? `Import: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
                     : (_r.log || 'OK').trim().slice(0, 200);
+                if (_r.failed) msg += `, ${_r.failed} Datei(en) fehlgeschlagen`;
                 if (_r.epexMonths) msg += ` Spot-Preise: ${_r.epexMonths} Monat(e) geladen.`;
                 _el.textContent = msg;
             } else {
-                _el.textContent = `Import fehlgeschlagen: ${(_r.log || _r.error || 'Unbekannter Fehler').trim().slice(0, 200)}`;
+                _el.textContent = `Import fehlgeschlagen: ${(_r.error || _r.log || 'Unbekannter Fehler').trim().slice(0, 200)}`;
             }
             document.querySelector('.app-header')?.insertAdjacentElement('afterend', _el);
             setTimeout(() => _el.remove(), 8000);
         } catch (_) {}
     }
 
-    // Import trigger — 2-step: preview → dialog → import → auto EPEX fetch
+    // Import trigger — client-loop: preview → dialog → chunked import → EPEX → finalize
     const importBtn    = document.getElementById('import-trigger');
     const importDialog = document.getElementById('import-dialog');
     if (importBtn && importDialog) {
-        const impTotal    = document.getElementById('imp-total');
-        const impExisting = document.getElementById('imp-existing');
-        const impNew      = document.getElementById('imp-new');
-        const impCancel   = document.getElementById('imp-cancel');
-        const impConfirm  = document.getElementById('imp-confirm');
-        const impEpexSect = document.getElementById('imp-epex-section');
-        const impEpexBar  = document.getElementById('imp-epex-bar');
-        const impEpexLbl  = document.getElementById('imp-epex-label');
-        const importLabel = importBtn.textContent;
+        const impTotal      = document.getElementById('imp-total');
+        const impExisting   = document.getElementById('imp-existing');
+        const impNew        = document.getElementById('imp-new');
+        const impCancel     = document.getElementById('imp-cancel');
+        const impConfirm    = document.getElementById('imp-confirm');
+        const impFormatWarn = document.getElementById('imp-format-warn');
+        const impEpexSect   = document.getElementById('imp-epex-section');
+        const impEpexBar    = document.getElementById('imp-epex-bar');
+        const impEpexLbl    = document.getElementById('imp-epex-label');
+        const impCsvSect    = document.getElementById('imp-csv-section');
+        const impCsvBar     = document.getElementById('imp-csv-bar');
+        const impCsvLbl     = document.getElementById('imp-csv-label');
+        const importLabel   = importBtn.textContent;
+        let importAbbruch   = false;
+        let importLaeuft    = false;
+        let lastPreview     = null;
 
         function _post(type, extra) {
             let body = 'csrf_token=' + encodeURIComponent(csrfToken);
@@ -187,6 +200,40 @@ function render_header(string $page_type): void
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body,
             }).then(r => r.json());
+        }
+
+        async function _apiJson(type, extra) {
+            let body = 'csrf_token=' + encodeURIComponent(csrfToken);
+            if (extra) body += '&' + extra;
+            const r = await fetch(apiBase + '/api.php?type=' + type, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body,
+            });
+            let data;
+            try {
+                data = await r.json();
+            } catch (_) {
+                const snippet = (await r.text().catch(() => '')).slice(0, 300);
+                throw { httpStatus: r.status, detail: snippet };
+            }
+            if (!r.ok || data.ok === false) throw { httpStatus: r.status, error: data.error, detail: data.detail };
+            return data;
+        }
+
+        function _httpFehler(e) {
+            if (e && e.httpStatus === 504) {
+                return { ok: false, error: 'Zeitüberschreitung (HTTP 504) — Server zu langsam. Bitte erneut versuchen.' };
+            }
+            const s = e && e.httpStatus ? ' (HTTP ' + e.httpStatus + ')' : '';
+            const d = e && e.detail ? ' — ' + e.detail : '';
+            return { ok: false, error: (e && e.error ? e.error : 'Serverfehler') + s + d };
+        }
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = String(s);
+            return d.innerHTML;
         }
 
         async function _fetchEpexWithProgress() {
@@ -218,60 +265,102 @@ function render_header(string $page_type): void
         }
 
         async function _runImport() {
+            importAbbruch = false;
+            importLaeuft  = true;
             impConfirm.disabled = true;
-            impCancel.disabled  = true;
+            impCancel.disabled  = false;
             impConfirm.textContent = 'Importiere\u2026';
-            let result;
             try {
-                result = await _post('trigger-import');
-            } catch (_) {
-                result = { ok: false, error: 'Netzwerkfehler' };
+                const cand = (await _apiJson('import-candidates')).candidates || [];
+                impCsvSect.style.display = '';
+                impCsvBar.max   = cand.length || 1;
+                impCsvBar.value = 0;
+                const doneDays  = [];
+                const doneFiles = new Set();
+                let failed = 0, imported = 0;
+                for (let i = 0; i < cand.length; i++) {
+                    if (importAbbruch) break;
+                    const c = cand[i];
+                    impCsvLbl.textContent = 'Import: ' + (i + 1) + '\u00a0/\u00a0' + cand.length + ' \u00b7 ' + c.file + ' ' + c.date;
+                    try {
+                        const r = await _apiJson('import-chunk', 'file=' + encodeURIComponent(c.file) + '&day=' + encodeURIComponent(c.date));
+                        imported += r.inserted || 0;
+                        doneDays.push(c.date);
+                        doneFiles.add(c.file);
+                    } catch (_) {
+                        failed++;
+                    }
+                    impCsvBar.value = i + 1;
+                }
+                let epex = {};
+                if (!importAbbruch && isAdmin) {
+                    try { epex = await _fetchEpexWithProgress(); } catch (_) {}
+                }
+                if (!importAbbruch && doneDays.length) {
+                    await _apiJson('import-finalize',
+                        doneDays.map(d => 'days[]=' + encodeURIComponent(d)).join('&') + '&' +
+                        [...doneFiles].map(f => 'files[]=' + encodeURIComponent(f)).join('&'));
+                }
+                importDialog.close();
+                importLaeuft = false;
+                const result = importAbbruch
+                    ? { ok: false, error: 'Import abgebrochen.' }
+                    : Object.assign({
+                          ok: failed === 0,
+                          imported,
+                          existing: lastPreview ? lastPreview.existing : undefined,
+                          total: lastPreview ? lastPreview.total : undefined,
+                          failed,
+                      }, epex);
+                sessionStorage.setItem('importResult', JSON.stringify(result));
+                location.reload();
+            } catch (e) {
+                importLaeuft = false;
+                importDialog.close();
+                sessionStorage.setItem('importResult', JSON.stringify(_httpFehler(e)));
+                location.reload();
             }
-            if (result.ok && isAdmin) {
-                try {
-                    const epex = await _fetchEpexWithProgress();
-                    result = Object.assign({}, result, epex);
-                } catch (_) {}
-            }
-            importDialog.close();
-            sessionStorage.setItem('importResult', JSON.stringify(result));
-            location.reload();
         }
 
         importBtn.addEventListener('click', e => {
             e.stopPropagation();
             importBtn.textContent = 'Lade Vorschau\u2026';
             importBtn.disabled    = true;
-            fetch(apiBase + '/api.php?type=preview-import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'csrf_token=' + encodeURIComponent(csrfToken),
-            })
-                .then(r => r.json())
+            _apiJson('preview-import')
                 .then(d => {
                     importBtn.textContent = importLabel;
                     importBtn.disabled    = false;
-                    if (!d.ok) {
-                        sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: d.error || 'Vorschau fehlgeschlagen' }));
-                        location.reload();
-                        return;
-                    }
+                    lastPreview = d;
                     impTotal.textContent    = d.total;
                     impExisting.textContent = d.existing;
                     impNew.textContent      = d.new;
-                    impConfirm.disabled     = false;
-                    impConfirm.textContent  = 'Importieren';
+                    const bad = (d.dateien || []).filter(f => !f.ok);
+                    if (bad.length) {
+                        impFormatWarn.hidden    = false;
+                        impFormatWarn.innerHTML = 'Format gepr\u00fcft \u2014 ' + bad.length +
+                            ' Datei(en) sehen anders aus als erwartet:<ul>' +
+                            bad.map(f => '<li>' + escapeHtml(f.name) + ': ' + escapeHtml(f.problem || 'unbekannt') + '</li>').join('') +
+                            '</ul>';
+                        impConfirm.disabled = true;
+                    } else {
+                        impFormatWarn.hidden = true;
+                        impConfirm.disabled  = false;
+                    }
+                    impConfirm.textContent = 'Importieren';
                     importDialog.showModal();
                 })
-                .catch(() => {
+                .catch(e => {
                     importBtn.textContent = importLabel;
                     importBtn.disabled    = false;
-                    sessionStorage.setItem('importResult', JSON.stringify({ ok: false, error: 'Netzwerkfehler bei Vorschau' }));
+                    sessionStorage.setItem('importResult', JSON.stringify(_httpFehler(e)));
                     location.reload();
                 });
         });
 
-        impCancel.addEventListener('click', () => importDialog.close());
+        impCancel.addEventListener('click', () => {
+            if (importLaeuft) { importAbbruch = true; return; }
+            importDialog.close();
+        });
         impConfirm.addEventListener('click', _runImport);
         importDialog.addEventListener('click', e => { if (e.target === importDialog) importDialog.close(); });
 
