@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/../inc/csv_parser.php';
+require_once __DIR__ . '/../inc/csv_importer.php';
+require_once __DIR__ . '/../inc/api_json.php';
 
 if (empty($_SESSION['loggedin'])) {
     http_response_code(401);
@@ -63,6 +65,23 @@ function invoice_breakdown(array &$rows, bool $is_daily,
 define('TARIFF_COLS', "t.provider_surcharge_ct, t.electricity_tax_ct, t.renewable_tax_ct,
                 t.consumption_tax_rate, t.vat_rate,
                 t.meter_fee_eur, t.renewable_fee_eur, t.yearly_kwh_estimate");
+
+// JSON-Härtung für die Import-Routen: PHP-Warnings/-Fatals dürfen nie einen
+// kaputten/leeren Body erzeugen — sie werden hier in valides Fehler-JSON
+// übersetzt (§ „nie bloß Netzwerkfehler").
+$importTypes = ['preview-import', 'import-candidates', 'import-chunk', 'import-finalize'];
+if (in_array($type, $importTypes, true)) {
+    set_error_handler(function ($no, $str) {
+        throw new ErrorException($str, 0, $no);
+    });
+    register_shutdown_function(function () {
+        $e = error_get_last();
+        if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+            if (!headers_sent()) { http_response_code(500); header('Content-Type: application/json; charset=utf-8'); }
+            echo json_encode(['ok' => false, 'error' => 'server_fatal', 'detail' => $e['message']]);
+        }
+    });
+}
 
 if ($type === 'daily') {
     $date = $_GET['date'] ?? date('Y-m-d', strtotime('-1 day'));
@@ -362,155 +381,121 @@ if ($type === 'daily') {
 
 } elseif ($type === 'preview-import') {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        http_response_code(405); echo json_encode(['error' => 'Method not allowed']); exit;
+        api_json_send(['ok' => false, 'error' => 'method_not_allowed'], 405);
     }
     if (!csrf_verify($_POST['csrf_token'] ?? '')) {
-        http_response_code(403); echo json_encode(['error' => 'Invalid CSRF token']); exit;
+        api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
     }
-    $root    = realpath(dirname(__DIR__));
-    $scrapes = $root . '/scrapes';
-    $files   = array_merge(
-        glob($scrapes . '/*.csv')  ?: [],
-        glob($scrapes . '/*.xlsx') ?: []
-    );
-    if (empty($files)) {
-        echo json_encode(['ok' => true, 'total' => 0, 'existing' => 0, 'new' => 0, 'files' => 0]);
-        exit;
+    try {
+        $root    = realpath(dirname(__DIR__));
+        $scrapes = $root . '/scrapes';
+        $files   = array_merge(
+            glob($scrapes . '/*.csv')  ?: [],
+            glob($scrapes . '/*.xlsx') ?: []
+        );
+        $timestamps  = [];
+        $fileReports = [];
+        $formatOk    = true;
+        foreach ($files as $file) {
+            $isCsv = strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'csv';
+            if ($isCsv) {
+                $fmt = energie_csv_format_pruefen($file);
+                $fileReports[] = ['name' => basename($file), 'zeilen' => $fmt['zeilen'], 'ok' => $fmt['ok'], 'problem' => $fmt['problem']];
+                if (!$fmt['ok']) $formatOk = false;
+                $timestamps = array_merge($timestamps, _parse_energie_csv_timestamps($file));
+            } else {
+                $fileReports[] = ['name' => basename($file), 'zeilen' => 0, 'ok' => true, 'problem' => null]; // XLSX: Import validiert
+            }
+        }
+        $counts = preview_import_counts($pdo, $timestamps);
+        api_json_send([
+            'ok'        => true,
+            'total'     => $counts['total'],
+            'existing'  => $counts['existing'],
+            'new'       => $counts['new'],
+            'files'     => count($files),
+            'format_ok' => $formatOk,
+            'dateien'   => $fileReports,
+        ]);
+    } catch (Throwable $e) {
+        api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
-    $timestamps = [];
-    foreach ($files as $file) {
-        $ts = strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'csv'
-            ? _parse_energie_csv_timestamps($file)
-            : [];                          // XLSX: preview not implemented; import will validate
-        $timestamps = array_merge($timestamps, $ts);
-    }
-    $timestamps = array_values(array_unique($timestamps));
-    $total = count($timestamps);
-    $existing = 0;
-    if ($total > 0) {
-        $ph   = implode(',', array_fill(0, $total, '?'));
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM readings WHERE ts IN ($ph)");
-        $stmt->execute($timestamps);
-        $existing = (int) $stmt->fetchColumn();
-    }
-    echo json_encode([
-        'ok'       => true,
-        'total'    => $total,
-        'existing' => $existing,
-        'new'      => $total - $existing,
-        'files'    => count($files),
-    ]);
 
-} elseif ($type === 'trigger-import') {
-    require_once __DIR__ . '/../inc/csv_importer.php';
+} elseif ($type === 'import-candidates') {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        http_response_code(405);
-        echo json_encode(['error' => 'Method not allowed']);
-        exit;
+        api_json_send(['ok' => false, 'error' => 'method_not_allowed'], 405);
     }
     if (!csrf_verify($_POST['csrf_token'] ?? '')) {
-        http_response_code(403);
-        echo json_encode(['error' => 'Invalid CSRF token']);
-        exit;
+        api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
     }
-    $root    = realpath(dirname(__DIR__));
-    $scrapes = $root . '/scrapes';
-    $archiv  = $root . '/_Archiv';
-    if (!is_dir($scrapes)) mkdir($scrapes, 0755, true);
-    if (!is_dir($archiv))  mkdir($archiv,  0755, true);
-    $files   = array_merge(
-        glob($scrapes . '/*.csv')  ?: [],
-        glob($scrapes . '/*.xlsx') ?: []
-    );
-    if (empty($files)) {
-        echo json_encode(['ok' => true, 'count' => 0, 'rows' => 0]);
-        exit;
+    try {
+        $root    = realpath(dirname(__DIR__));
+        $scrapes = $root . '/scrapes';
+        $files   = glob($scrapes . '/*.csv') ?: [];
+        $candidates = array_map(
+            static fn(array $c): array => ['file' => basename($c['file']), 'date' => $c['date'], 'rows' => $c['rows']],
+            import_candidates($files)
+        );
+        api_json_send(['ok' => true, 'candidates' => $candidates]);
+    } catch (Throwable $e) {
+        api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
-    $script = $root . '/energie.py';
-    // python3 nur noch für XLSX nötig; robust erkennen statt hartkodiertem Pfad
-    // (akadbrain = /opt/homebrew, Intel-Mac = /usr/local, System = /usr/bin).
-    $pyBin = null;
-    foreach (['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'] as $cand) {
-        if (@is_executable($cand)) { $pyBin = $cand; break; }
-    }
-    $canPython = $pyBin && file_exists($script) && function_exists('proc_open');
 
-    $log      = '';
-    $ok       = true;
-    $imported = 0;
-    $existing = 0;
-    $total    = 0;
-
-    // CSV wird ÜBERALL PHP-nativ importiert (robust, ohne Python-Deps —
-    // energie.py braucht yaml/requests, die auf akadbrain/world4you fehlen).
-    // Python bleibt nur für XLSX. EPEX zuerst, damit spot_ct gesetzt ist,
-    // bevor cost_brutto berechnet wird.
-    require_once __DIR__ . '/../inc/epex_importer.php';
-    $hasCsv = (bool) array_filter(
-        $files,
-        static fn($f) => strtolower(pathinfo($f, PATHINFO_EXTENSION)) === 'csv'
-    );
-    if ($hasCsv) {
-        try {
-            $epex = php_fetch_missing_epex($pdo);
-            if ($epex['rows'] > 0) {
-                $log .= 'EPEX: ' . $epex['log'] . "\n";
-                appendLog($con, 'import', sprintf('EPEX auto: %d Monat(e), %d Zeilen.', $epex['months'], $epex['rows']));
-            }
-        } catch (Exception $e) {
-            $log .= 'EPEX-Abruf fehlgeschlagen: ' . $e->getMessage() . "\n";
+} elseif ($type === 'import-chunk') {
+    if (($_SESSION['rights'] ?? '') !== 'Admin') {
+        api_json_send(['ok' => false, 'error' => 'forbidden'], 403);
+    }
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        api_json_send(['ok' => false, 'error' => 'method_not_allowed'], 405);
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
+    }
+    try {
+        $root    = realpath(dirname(__DIR__));
+        $scrapes = $root . '/scrapes';
+        $name    = basename((string) ($_POST['file'] ?? ''));
+        $day     = (string) ($_POST['day'] ?? '');
+        $path    = $scrapes . '/' . $name;
+        if ($name === '' || !is_file($path)) {
+            api_json_send(['ok' => false, 'error' => 'file_not_found'], 404);
         }
+        $r = php_import_day($pdo, $path, $day);
+        api_json_send(['ok' => true, 'inserted' => $r['inserted'], 'existing' => $r['existing'], 'total' => $r['total']]);
+    } catch (Throwable $e) {
+        api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
 
-    foreach ($files as $file) {
-        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-        if ($ext === 'csv') {
-            try {
-                $result    = php_import_csv($pdo, $file, $archiv);
-                $imported += $result['inserted'];
-                $existing += $result['total'] - $result['inserted'];
-                $total    += $result['total'];
-                $log      .= $result['log'];
-            } catch (Exception $e) {
-                $ok   = false;
-                $log .= basename($file) . ': Fehler: ' . $e->getMessage() . "\n";
-            }
-        } elseif ($canPython) {
-            // XLSX → Python-Pipeline (nur wo ein python3 mit Deps vorhanden ist).
-            $configPath = energie_config_path();
-            $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-            $proc = proc_open([$pyBin, $script, '--config', $configPath, 'import-csv', $file], $desc, $pipes, $root);
-            $out  = $proc ? stream_get_contents($pipes[1]) : '';
-            $err  = $proc ? stream_get_contents($pipes[2]) : '';
-            if ($proc) { fclose($pipes[1]); fclose($pipes[2]); }
-            $code = $proc ? proc_close($proc) : 1;
-            $log .= $out . ($err ? "\nSTDERR: $err" : '');
-            if ($code !== 0) { $ok = false; }
-            if (preg_match('/Imported (\d+) new, (\d+) existing, (\d+) total/', $out, $m)) {
-                $imported += (int) $m[1];
-                $existing += (int) $m[2];
-                $total    += (int) $m[3];
-            }
-        } else {
-            $log .= basename($file) . ": XLSX-Import nur mit Python verfügbar.\n";
-            $ok = false;
+} elseif ($type === 'import-finalize') {
+    if (($_SESSION['rights'] ?? '') !== 'Admin') {
+        api_json_send(['ok' => false, 'error' => 'forbidden'], 403);
+    }
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        api_json_send(['ok' => false, 'error' => 'method_not_allowed'], 405);
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
+    }
+    try {
+        $root    = realpath(dirname(__DIR__));
+        $scrapes = $root . '/scrapes';
+        $archiv  = $root . '/_Archiv';
+        if (!is_dir($archiv)) mkdir($archiv, 0755, true);
+        $days = array_values(array_filter(array_map('strval', (array) ($_POST['days'] ?? []))));
+        $files = [];
+        foreach ((array) ($_POST['files'] ?? []) as $f) {
+            $name = basename((string) $f);
+            if ($name !== '') $files[] = $scrapes . '/' . $name;
         }
+        $r = php_import_finalize($pdo, $days, $files, $archiv);
+        appendLog($con, 'import', sprintf(
+            'Import OK: %d Tag(e), %d Datei(en) archiviert, %d Kosten neu berechnet.',
+            $r['days'], count($r['archived']), $r['recomputed']
+        ));
+        api_json_send(['ok' => true, 'days' => $r['days'], 'archived' => $r['archived'], 'recomputed' => $r['recomputed']]);
+    } catch (Throwable $e) {
+        api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
-
-    $count = count($files);
-    if ($ok) {
-        appendLog($con, 'import', "Import OK: {$count} Datei(en), {$imported} neu, {$existing} vorhanden, {$total} gesamt.");
-    } else {
-        appendLog($con, 'import', "Import FAILED: {$count} Datei(en). " . mb_substr(trim($log), 0, 400));
-    }
-    echo json_encode([
-        'ok'       => $ok,
-        'count'    => $count,
-        'imported' => $imported,
-        'existing' => $existing,
-        'total'    => $total,
-        'log'      => $log,
-    ]);
 
 } elseif ($type === 'upload-csv') {
     // Admin-only CSV upload into scrapes/ for manual import
@@ -580,13 +565,8 @@ if ($type === 'daily') {
         mkdir($scrapes, 0755, true);
     }
 
-    $dest = $scrapes . '/' . $safeName;
-
-    if (file_exists($dest)) {
-        http_response_code(409);
-        echo json_encode(['error' => "A file named '{$safeName}' already exists in scrapes/"]);
-        exit;
-    }
+    $safeName = naechster_freier_name($scrapes, $safeName);
+    $dest     = $scrapes . '/' . $safeName;
 
     if (!move_uploaded_file($f['tmp_name'], $dest)) {
         http_response_code(500);
