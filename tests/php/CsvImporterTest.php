@@ -143,7 +143,101 @@ final class CsvImporterTest extends TestCase
         $this->assertSame(0, $result['inserted']);
     }
 
+    // ── client-loop import (§20): preview counts, candidates, per-day, finalize ──
+
+    public function test_preview_counts_ignoriert_epex_nur_zeilen(): void
+    {
+        // EPEX-Preseed: consumed_kwh = 0 → gilt als NEU, nicht vorhanden.
+        $this->runDdl(
+            "INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
+             VALUES ('2026-07-01 00:00:00', 0, 5.0, 0)"
+        );
+        $counts = preview_import_counts($this->pdo, ['2026-07-01T00:00:00', '2026-07-01T00:15:00']);
+        $this->assertSame(2, $counts['total']);
+        $this->assertSame(0, $counts['existing']);
+        $this->assertSame(2, $counts['new']);
+    }
+
+    public function test_import_day_importiert_nur_den_tag(): void
+    {
+        $this->seedTariff('2026-01-01');
+        $csv = $this->writeFixtureCsv(
+            "Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n"
+          . "01.07.2026;00:00:00;00:15:00;0,50\n"
+          . "02.07.2026;00:00:00;00:15:00;0,90\n"
+        );
+        $r = php_import_day($this->pdo, $csv, '2026-07-01');
+        $this->assertSame(1, $r['total']);
+        $this->assertSame(1, $r['inserted']);
+        $cnt = (int) $this->pdo->query("SELECT COUNT(*) FROM readings WHERE consumed_kwh > 0")->fetchColumn();
+        $this->assertSame(1, $cnt); // nur der 1. Tag
+    }
+
+    public function test_import_day_does_not_rebuild_summary_or_archive(): void
+    {
+        $this->seedTariff('2026-01-01');
+        $csv = $this->writeFixtureCsv(
+            "Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n01.07.2026;00:00:00;00:15:00;0,50\n"
+        );
+        php_import_day($this->pdo, $csv, '2026-07-01');
+        $this->assertFileExists($csv);
+        $this->assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM daily_summary')->fetchColumn());
+    }
+
+    public function test_candidates_gruppiert_nach_tag(): void
+    {
+        $csv = $this->writeFixtureCsv(
+            "Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n"
+          . "01.07.2026;00:00:00;00:15:00;0,50\n"
+          . "01.07.2026;00:15:00;00:30:00;0,40\n"
+          . "02.07.2026;00:00:00;00:15:00;0,90\n"
+        );
+        $cand = import_candidates([$csv]);
+        $days = array_column($cand, 'date');
+        $this->assertSame(['2026-07-01', '2026-07-02'], $days);
+        $this->assertSame(2, $cand[0]['rows']);
+    }
+
+    public function test_finalize_rebuilds_summary_and_archives_only_given_days(): void
+    {
+        $this->seedTariff('2026-01-01');
+        $csv = $this->writeFixtureCsv(
+            "Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n"
+          . "01.07.2026;00:00:00;00:15:00;0,50\n"
+          . "02.07.2026;00:00:00;00:15:00;0,90\n"
+        );
+        $name = basename($csv);
+        php_import_day($this->pdo, $csv, '2026-07-01');
+        php_import_day($this->pdo, $csv, '2026-07-02');
+
+        $res = php_import_finalize($this->pdo, ['2026-07-01'], [$csv], $this->archiv);
+        $this->assertSame(1, $res['days']);
+        $this->assertSame([$name], $res['archived']);
+        $this->assertFileDoesNotExist($csv);
+        $this->assertSame(
+            1,
+            (int) $this->pdo->query('SELECT COUNT(*) FROM daily_summary')->fetchColumn()
+        );
+        $this->assertSame(
+            '2026-07-01',
+            $this->pdo->query('SELECT day FROM daily_summary')->fetchColumn()
+        );
+    }
+
+    public function test_finalize_berechnet_kosten_nach_spaetem_epex(): void
+    {
+        $this->seedTariff('2026-01-01');
+        $csv = $this->writeFixtureCsv("Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n01.07.2026;00:00:00;00:15:00;1,0\n");
+        php_import_day($this->pdo, $csv, '2026-07-01'); // spot_ct evtl. 0 → cost 0
+        $this->runDdl("UPDATE readings SET spot_ct = 10.0 WHERE DATE(ts) = '2026-07-01'"); // später EPEX
+        $res = php_import_finalize($this->pdo, ['2026-07-01'], [$csv], $this->archiv);
+        $this->assertGreaterThan(0, $res['recomputed']);
+        $cost = (float) $this->pdo->query("SELECT cost_brutto FROM readings WHERE DATE(ts)='2026-07-01' LIMIT 1")->fetchColumn();
+        $this->assertGreaterThan(0.0, $cost);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────
+
 
     private function connectTestDb(): PDO
     {
