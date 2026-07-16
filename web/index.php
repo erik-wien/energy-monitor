@@ -15,7 +15,8 @@ $today = $stmt->fetch() ?: ['consumed_kwh' => 0, 'cost_brutto' => 0, 'avg_spot_c
 // Last 7 days tile
 $stmt = $pdo->prepare(
     "SELECT SUM(consumed_kwh) AS consumed_kwh, SUM(cost_brutto) AS cost_brutto,
-            AVG(avg_spot_ct) AS avg_spot_ct, MIN(day) AS from_day, MAX(day) AS to_day
+            SUM(avg_spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0) AS avg_spot_ct,
+            MIN(day) AS from_day, MAX(day) AS to_day
      FROM daily_summary WHERE day > DATE_SUB(?, INTERVAL 7 DAY)");
 $stmt->execute([$latest]);
 $week = $stmt->fetch();
@@ -28,7 +29,8 @@ $iso_week  = $latest_dt->format('W');
 // Last 30 days tile
 $stmt = $pdo->prepare(
     "SELECT SUM(consumed_kwh) AS consumed_kwh, SUM(cost_brutto) AS cost_brutto,
-            AVG(avg_spot_ct) AS avg_spot_ct, MONTH(MIN(day)) AS m, YEAR(MIN(day)) AS y
+            SUM(avg_spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0) AS avg_spot_ct,
+            MONTH(MIN(day)) AS m, YEAR(MIN(day)) AS y
      FROM daily_summary WHERE day > DATE_SUB(?, INTERVAL 30 DAY)");
 $stmt->execute([$latest]);
 $month = $stmt->fetch();
@@ -38,6 +40,7 @@ $prev_year  = (int)$month['y'];
 function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' kWh'; }
 function fmt_eur($v) { return '€ ' . number_format($v, 2, ',', '.'); }
 function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
+function kpi_eff($eur, $kwh) { return $kwh != 0.0 ? $eur / $kwh * 100 : 0.0; }
 ?>
 <?php render_page_head('Energie'); render_header('index'); ?>
 <main id="main-content" tabindex="-1">
@@ -50,7 +53,8 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
             <div class="kpi">
                 <div class="kpi-row"><span class="kpi-label">Verbrauch</span><span class="kpi-value kwh"><?= fmt_kwh($today['consumed_kwh']) ?></span></div>
                 <div class="kpi-row"><span class="kpi-label">Kosten</span><span class="kpi-value eur"><?= fmt_eur($today['cost_brutto']) ?></span></div>
-                <div class="kpi-row"><span class="kpi-label">Ø Tarif</span><span class="kpi-value tariff"><?= fmt_ct($today['avg_spot_ct']) ?></span></div>
+                <div class="kpi-row"><span class="kpi-label">Ø Spotpreis</span><span class="kpi-value tariff"><?= fmt_ct($today['avg_spot_ct']) ?></span></div>
+                <div class="kpi-row"><span class="kpi-label">Ø effektiv</span><span class="kpi-value eff"><?= fmt_ct(kpi_eff($today['cost_brutto'], $today['consumed_kwh'])) ?></span></div>
             </div>
         </a>
 
@@ -61,7 +65,8 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
             <div class="kpi">
                 <div class="kpi-row"><span class="kpi-label">Verbrauch</span><span class="kpi-value kwh"><?= fmt_kwh($week['consumed_kwh']) ?></span></div>
                 <div class="kpi-row"><span class="kpi-label">Kosten</span><span class="kpi-value eur"><?= fmt_eur($week['cost_brutto']) ?></span></div>
-                <div class="kpi-row"><span class="kpi-label">Ø Tarif</span><span class="kpi-value tariff"><?= fmt_ct($week['avg_spot_ct']) ?></span></div>
+                <div class="kpi-row"><span class="kpi-label">Ø Spotpreis</span><span class="kpi-value tariff"><?= fmt_ct($week['avg_spot_ct']) ?></span></div>
+                <div class="kpi-row"><span class="kpi-label">Ø effektiv</span><span class="kpi-value eff"><?= fmt_ct(kpi_eff($week['cost_brutto'], $week['consumed_kwh'])) ?></span></div>
             </div>
         </a>
 
@@ -72,7 +77,8 @@ function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
             <div class="kpi">
                 <div class="kpi-row"><span class="kpi-label">Verbrauch</span><span class="kpi-value kwh"><?= fmt_kwh($month['consumed_kwh']) ?></span></div>
                 <div class="kpi-row"><span class="kpi-label">Kosten</span><span class="kpi-value eur"><?= fmt_eur($month['cost_brutto']) ?></span></div>
-                <div class="kpi-row"><span class="kpi-label">Ø Tarif</span><span class="kpi-value tariff"><?= fmt_ct($month['avg_spot_ct']) ?></span></div>
+                <div class="kpi-row"><span class="kpi-label">Ø Spotpreis</span><span class="kpi-value tariff"><?= fmt_ct($month['avg_spot_ct']) ?></span></div>
+                <div class="kpi-row"><span class="kpi-label">Ø effektiv</span><span class="kpi-value eff"><?= fmt_ct(kpi_eff($month['cost_brutto'], $month['consumed_kwh'])) ?></span></div>
             </div>
         </a>
 

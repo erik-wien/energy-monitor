@@ -13,7 +13,8 @@ $start_ymd = date('Y-m-01', strtotime('-12 months', strtotime($end_ymd)));
 
 // KPIs
 $stmt = $pdo->prepare(
-    "SELECT SUM(consumed_kwh) AS kwh, SUM(cost_brutto) AS eur, AVG(avg_spot_ct) AS ct
+    "SELECT SUM(consumed_kwh) AS kwh, SUM(cost_brutto) AS eur,
+            SUM(avg_spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0) AS ct
      FROM daily_summary
      WHERE day >= ? AND day < DATE_ADD(?, INTERVAL 1 MONTH)"
 );
@@ -22,6 +23,7 @@ $kpi = $stmt->fetch();
 $kpi_kwh = (float)($kpi['kwh'] ?? 0);
 $kpi_eur = (float)($kpi['eur'] ?? 0);
 $kpi_ct  = (float)($kpi['ct']  ?? 0);
+$kpi_eff = $kpi_kwh != 0.0 ? $kpi_eur / $kpi_kwh * 100 : 0.0;
 
 // Navigation
 $prev_month = $month - 1; $prev_year = $year;
@@ -85,8 +87,12 @@ render_header($page_type);
             <div class="value eur"><?= fmt_eur($kpi_eur) ?></div>
         </div>
         <div class="kpi-card">
-            <div class="label">Ø Tarif</div>
+            <div class="label">Ø Spotpreis</div>
             <div class="value tariff"><?= fmt_ct($kpi_ct) ?></div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Ø effektiv</div>
+            <div class="value eff"><?= fmt_ct($kpi_eff) ?></div>
         </div>
     </div>
     <div class="chart-controls" style="margin-top:0.75rem">
@@ -405,7 +411,7 @@ function buildPrintContent(data, DE_MO) {
     + '<table>'
     + '<thead><tr>'
     + '<th>Monat</th>'
-    + '<th>Verbrauch</th><th>EPEX \u00f8</th><th>\u00d8 gew.</th><th>Netto Preis</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>'
+    + '<th>Verbrauch</th><th>EPEX \u00f8</th><th>\u00d8 gew.</th><th>Netto Preis (EPEX \u00f8)</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>'
     + '</tr></thead>'
     + '<tbody>' + bodyParts.join('') + '</tbody>'
     + '<tfoot>' + footParts.join('') + '</tfoot>'

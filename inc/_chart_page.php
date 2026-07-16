@@ -10,6 +10,7 @@
 // $kpi_kwh      float
 // $kpi_eur      float
 // $kpi_ct       float
+// $kpi_eff      float
 
 require_once __DIR__ . '/layout.php';
 
@@ -55,8 +56,12 @@ render_header($page_type);
             <div class="value eur"><?= fmt_eur($kpi_eur) ?></div>
         </div>
         <div class="kpi-card">
-            <div class="label">Ø Tarif</div>
+            <div class="label">Ø Spotpreis</div>
             <div class="value tariff"><?= fmt_ct($kpi_ct) ?></div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Ø effektiv</div>
+            <div class="value eff"><?= fmt_ct($kpi_eff) ?></div>
         </div>
     </div>
     <div class="chart-controls">
@@ -429,7 +434,7 @@ function buildPrintContent(data, DE_DAYS) {
   } else {
     // 10 columns: Tag, Verbrauch, EPEX ø, Ø gew., Netto Preis, Aufschlag, Abgaben, Steuern, MwSt, Preis Brutto
     blank = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>';
-    headerCols = '<th>Verbrauch</th><th>EPEX \u00f8</th><th>\u00d8 gew.</th><th>Netto Preis</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>';
+    headerCols = '<th>Verbrauch</th><th>EPEX \u00f8</th><th>\u00d8 gew.</th><th>Netto Preis (EPEX \u00f8)</th><th>Aufschlag</th><th>Abgaben</th><th>Steuern</th><th>MwSt</th><th>Preis Brutto</th>';
     footParts = [
       '<tr class="sub">'
         + '<td class="lbl-sub">Zwischensumme</td>'

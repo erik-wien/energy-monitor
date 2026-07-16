@@ -63,6 +63,7 @@ main { padding: 1.5rem 2rem; }
 .tile .kpi-value.kwh   { color: var(--color-green); }
 .tile .kpi-value.eur   { color: var(--color-accent); }
 .tile .kpi-value.tariff { color: var(--color-blue); }
+.tile .kpi-value.eff   { color: var(--color-warning); }
 
 /* ── Drilldown nav bar ─────────────────────────────────────────────────────── */
 
@@ -130,7 +131,7 @@ main { padding: 1.5rem 2rem; }
 
 .kpi-strip {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
     margin-bottom: 1rem;
 }
@@ -148,6 +149,7 @@ main { padding: 1.5rem 2rem; }
 .kpi-card .value.kwh    { color: var(--color-green); }
 .kpi-card .value.eur    { color: var(--color-accent); }
 .kpi-card .value.tariff { color: var(--color-blue); }
+.kpi-card .value.eff    { color: var(--color-warning); }
 
 /* Landscape auf Touch-Geräten: vertikal Platz sparen (KPI-Höhe + Graph-Polster),
    ohne die KPI-Kacheln schmäler zu machen. Ein Regler + eine abgeleitete Größe. */
@@ -415,6 +417,9 @@ main { padding: 1.5rem 2rem; }
 
 @media (max-width: 600px) {
     .tiles, .kpi-strip { grid-template-columns: 1fr; }
+}
+@media (min-width: 601px) and (max-width: 900px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ---- Admin tabs ------------------------------------------------------ */

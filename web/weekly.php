@@ -22,7 +22,8 @@ $stmt->execute([$next_year, $next_week]);
 $next_url = $stmt->fetchColumn() > 0 ? "$base/weekly.php?year=$next_year&week=$next_week" : null;
 
 $stmt = $pdo->prepare(
-    "SELECT SUM(consumed_kwh) AS kwh, SUM(cost_brutto) AS eur, AVG(avg_spot_ct) AS ct
+    "SELECT SUM(consumed_kwh) AS kwh, SUM(cost_brutto) AS eur,
+            SUM(avg_spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0) AS ct
      FROM daily_summary WHERE YEAR(day)=? AND WEEK(day,3)=?");
 $stmt->execute([$year, $week]);
 $summary = $stmt->fetch() ?: ['kwh' => 0, 'eur' => 0, 'ct' => 0];
@@ -37,5 +38,6 @@ $api_url      = "$base/api.php?type=weekly&year=$year&week=$week";
 $kpi_kwh      = (float)$summary['kwh'];
 $kpi_eur      = (float)$summary['eur'];
 $kpi_ct       = (float)$summary['ct'];
+$kpi_eff      = $kpi_kwh != 0.0 ? $kpi_eur / $kpi_kwh * 100 : 0.0;
 
 require __DIR__ . '/../inc/_chart_page.php';
