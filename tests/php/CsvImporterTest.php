@@ -34,8 +34,10 @@ final class CsvImporterTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (glob($this->archiv . '/*') ?: [] as $f) @unlink($f);
-        @rmdir($this->archiv);
+        if (isset($this->archiv)) {
+            foreach (glob($this->archiv . '/*') ?: [] as $f) @unlink($f);
+            @rmdir($this->archiv);
+        }
         foreach (glob(sys_get_temp_dir() . '/energie-importer-*') ?: [] as $f) {
             @unlink($f);
         }
