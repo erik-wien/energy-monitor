@@ -6,6 +6,8 @@
  * pulling in the request/session/PDO side effects of the endpoint.
  */
 
+require_once __DIR__ . '/csv_format.php';
+
 /**
  * Parse timestamp strings from a semicolon-delimited Energie CSV.
  *
@@ -19,26 +21,16 @@
  * error, matching the Python pipeline's behaviour).
  */
 function _parse_energie_csv_timestamps(string $path): array {
-    // Suppress fopen's warning on missing/unreadable path — this is a JSON
-    // endpoint, so a stray PHP warning would corrupt the response body.
+    $fmt = energie_csv_format_pruefen($path);
+    if (!$fmt['ok']) return [];
     $handle = @fopen($path, 'r');
     if (!$handle) return [];
-    $first   = ltrim((string) fgets($handle), "\xEF\xBB\xBF");  // strip BOM
-    $headers = array_map('trim', str_getcsv(trim($first), ';', '"', ''));
-    $dIdx = array_search('Datum', $headers, true);
-    $vIdx = array_search('Zeit von', $headers, true);
-    if ($vIdx === false) $vIdx = array_search('von', $headers, true);
-    $kIdx = null;
-    foreach ($headers as $i => $h) {
-        if (strpos($h, 'Verbrauch') !== false || strpos($h, 'kWh') !== false) { $kIdx = $i; break; }
-    }
-    if ($dIdx === false || $vIdx === false || $kIdx === null) { fclose($handle); return []; }
+    fgets($handle); // Kopfzeile überspringen
+    $dIdx = $fmt['datum_idx']; $vIdx = $fmt['zeit_idx']; $kIdx = $fmt['verbrauch_idx'];
     $timestamps = [];
     while (($line = fgets($handle)) !== false) {
         $cols  = str_getcsv(trim($line), ';', '"', '');
-        $datum = trim($cols[$dIdx] ?? '');
-        $von   = trim($cols[$vIdx] ?? '');
-        $kwh   = trim($cols[$kIdx] ?? '');
+        $datum = trim($cols[$dIdx] ?? ''); $von = trim($cols[$vIdx] ?? ''); $kwh = trim($cols[$kIdx] ?? '');
         if (!$datum || !$von || !$kwh) continue;
         $parts = explode('.', $datum);
         if (count($parts) !== 3) continue;
