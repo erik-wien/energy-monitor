@@ -337,28 +337,58 @@ function php_import_day(PDO $pdo, string $filepath, string $date): array {
  */
 function php_import_finalize(PDO $pdo, array $days, array $files, string $archiv): array {
     $days = array_values(array_unique(array_filter($days)));
-    _csv_rebuild_daily_summary($pdo, $days);
 
     // Kosten für die berührten Tage neu rechnen: spot_ct kann durch einen
     // späteren EPEX-Abruf gesetzt worden sein, cost_brutto sonst = 0.
+    // Gebatcht wie _csv_upsert_rows: ein SELECT, dann chunked Multi-Row-UPSERT
+    // — kein Per-Zeile-Round-Trip (siehe Datei-Kopf).
     $recomputed = 0;
     if (!empty($days)) {
         $tariffs = _csv_load_tariffs($pdo);
         $ph = implode(',', array_fill(0, count($days), '?'));
         $sel = $pdo->prepare("SELECT ts, consumed_kwh, spot_ct FROM readings WHERE consumed_kwh > 0 AND DATE(ts) IN ($ph)");
         $sel->execute($days);
-        $upd = $pdo->prepare("UPDATE readings SET cost_brutto = ? WHERE ts = ?");
-        $pdo->beginTransaction();
-        try {
-            foreach ($sel->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $t = _csv_tariff_for($tariffs, substr((string) $row['ts'], 0, 10));
-                if ($t === null) continue;
-                $cost = _csv_calc_cost((float) $row['consumed_kwh'], (float) $row['spot_ct'], $t);
-                $upd->execute([$cost, $row['ts']]);
-                $recomputed++;
+
+        $updates = [];
+        foreach ($sel->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $t = _csv_tariff_for($tariffs, substr((string) $row['ts'], 0, 10));
+            if ($t === null) continue;
+            $updates[] = [
+                'ts'           => $row['ts'],
+                'consumed_kwh' => (float) $row['consumed_kwh'],
+                'spot_ct'      => (float) $row['spot_ct'],
+                'cost'         => _csv_calc_cost((float) $row['consumed_kwh'], (float) $row['spot_ct'], $t),
+            ];
+        }
+
+        if (!empty($updates)) {
+            $pdo->beginTransaction();
+            try {
+                foreach (array_chunk($updates, 500) as $chunk) {
+                    $placeholders = [];
+                    $params       = [];
+                    foreach ($chunk as $u) {
+                        $placeholders[] = '(?, ?, ?, ?)';
+                        $params[]       = $u['ts'];
+                        $params[]       = $u['consumed_kwh'];
+                        $params[]       = $u['spot_ct'];
+                        $params[]       = $u['cost'];
+                    }
+                    $stmt = $pdo->prepare(
+                        "INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
+                         VALUES " . implode(',', $placeholders) . "
+                         ON DUPLICATE KEY UPDATE cost_brutto = VALUES(cost_brutto)"
+                    );
+                    $stmt->execute($params);
+                }
+                $pdo->commit();
+            } catch (Throwable $e) {
+                $pdo->rollBack();
+                throw $e;
             }
-            $pdo->commit();
-        } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+            $recomputed = count($updates);
+        }
+
         _csv_rebuild_daily_summary($pdo, $days); // Summary mit neuen Kosten
     }
 

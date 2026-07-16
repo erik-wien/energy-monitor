@@ -226,14 +226,44 @@ final class CsvImporterTest extends TestCase
 
     public function test_finalize_berechnet_kosten_nach_spaetem_epex(): void
     {
-        $this->seedTariff('2026-01-01');
+        $tariff = $this->seedTariff('2026-01-01');
         $csv = $this->writeFixtureCsv("Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n01.07.2026;00:00:00;00:15:00;1,0\n");
         php_import_day($this->pdo, $csv, '2026-07-01'); // spot_ct evtl. 0 → cost 0
         $this->runDdl("UPDATE readings SET spot_ct = 10.0 WHERE DATE(ts) = '2026-07-01'"); // später EPEX
         $res = php_import_finalize($this->pdo, ['2026-07-01'], [$csv], $this->archiv);
-        $this->assertGreaterThan(0, $res['recomputed']);
+        $this->assertSame(1, $res['recomputed']);
+        $expected = _csv_calc_cost(1.0, 10.0, $tariff);
         $cost = (float) $this->pdo->query("SELECT cost_brutto FROM readings WHERE DATE(ts)='2026-07-01' LIMIT 1")->fetchColumn();
-        $this->assertGreaterThan(0.0, $cost);
+        $this->assertEqualsWithDelta($expected, $cost, 0.000001);
+    }
+
+    public function test_finalize_recompute_ueberspringt_epex_nur_zeilen(): void
+    {
+        $tariff = $this->seedTariff('2026-01-01');
+        $csv = $this->writeFixtureCsv("Datum;Zeit von;Zeit bis;Verbrauch [kWh]\n01.07.2026;00:00:00;00:15:00;1,0\n");
+        php_import_day($this->pdo, $csv, '2026-07-01');
+        // EPEX-Preseed am selben Tag: consumed_kwh = 0, aber spot_ct gesetzt.
+        $this->runDdl(
+            "INSERT INTO readings (ts, consumed_kwh, spot_ct, cost_brutto)
+             VALUES ('2026-07-01 00:15:00', 0, 10.0, 0)"
+        );
+        $this->runDdl("UPDATE readings SET spot_ct = 10.0 WHERE ts = '2026-07-01 00:00:00'");
+
+        $res = php_import_finalize($this->pdo, ['2026-07-01'], [$csv], $this->archiv);
+
+        // Nur die Zeile mit echtem Verbrauch wird neu berechnet.
+        $this->assertSame(1, $res['recomputed']);
+
+        $expected = _csv_calc_cost(1.0, 10.0, $tariff);
+        $realCost = (float) $this->pdo->query(
+            "SELECT cost_brutto FROM readings WHERE ts = '2026-07-01 00:00:00'"
+        )->fetchColumn();
+        $this->assertEqualsWithDelta($expected, $realCost, 0.000001);
+
+        $epexCost = (float) $this->pdo->query(
+            "SELECT cost_brutto FROM readings WHERE ts = '2026-07-01 00:15:00'"
+        )->fetchColumn();
+        $this->assertSame(0.0, $epexCost);
     }
 
     // ── helpers ───────────────────────────────────────────────────────
@@ -292,7 +322,8 @@ final class CsvImporterTest extends TestCase
         $this->pdo->exec($sql);
     }
 
-    private function seedTariff(string $validFrom): void
+    /** @return array Tariff row shape matching _csv_load_tariffs(), for expected-cost assertions. */
+    private function seedTariff(string $validFrom): array
     {
         $this->pdo->prepare(
             "INSERT INTO tariff_config
@@ -301,6 +332,18 @@ final class CsvImporterTest extends TestCase
               consumption_tax_rate, vat_rate, yearly_kwh_estimate)
              VALUES (?, 1.5, 1.5, 1.0, 30.0, 10.0, 0.06, 0.20, 3000)"
         )->execute([$validFrom]);
+
+        return [
+            'valid_from'            => $validFrom,
+            'provider_surcharge_ct' => 1.5,
+            'electricity_tax_ct'    => 1.5,
+            'renewable_tax_ct'      => 1.0,
+            'consumption_tax_rate'  => 0.06,
+            'vat_rate'              => 0.20,
+            'meter_fee_eur'         => 30.0,
+            'renewable_fee_eur'     => 10.0,
+            'yearly_kwh_estimate'   => 3000.0,
+        ];
     }
 
     private function writeFixtureCsv(string $body): string
