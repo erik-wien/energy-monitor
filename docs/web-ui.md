@@ -274,20 +274,57 @@ Body: theme=light|dark|auto
 
 Persists to `auth_accounts.theme` and `$_SESSION['theme']`. Returns `{"ok": true}`.
 
-### `type=trigger-import`
+### Import routes (§20 client loop)
+
+The header import button no longer spawns a subprocess. It drives a client-side loop over four JSON routes, one small request per step, so no single request can exceed a proxy/PHP timeout:
+
+#### `type=preview-import`
 
 ```
-POST api.php?type=trigger-import
+POST api.php?type=preview-import
 ```
 
-Runs the Python import pipeline on all `.csv` and `.xlsx` files currently in `scrapes/`. The subprocess is spawned via `proc_open()` with an array argument list (no shell string, no injection risk). Captures stdout/stderr and returns:
+Scans `scrapes/` for `.csv`/`.xlsx` files and returns totals plus a per-file format check:
 
 ```json
-{ "ok": true,  "log": "Imported 384 rows…" }
-{ "ok": false, "error": "…", "log": "…" }
+{ "ok": true, "total": 384, "existing": 0, "new": 384, "files": 2,
+  "format_ok": true,
+  "dateien": [ { "name": "QuarterHourValues-2026-04.csv", "zeilen": 384, "ok": true, "problem": null } ] }
 ```
 
-The import button in the header dropdown calls this endpoint, disables itself while waiting, and reloads the page on success.
+`dateien[]` has one entry per file (`ok`/`problem` flag a CSV whose columns don't match the expected format); `format_ok` is `false` if any file failed the check.
+
+#### `type=import-candidates`
+
+```
+POST api.php?type=import-candidates
+```
+
+Returns one chunk per file×day found in `scrapes/`:
+
+```json
+{ "ok": true, "candidates": [ { "file": "QuarterHourValues-2026-04.csv", "date": "2026-04-07", "rows": 96 } ] }
+```
+
+#### `type=import-chunk` (Admin)
+
+```
+POST api.php?type=import-chunk
+Body: file=<name>&day=YYYY-MM-DD
+```
+
+Imports exactly one day from one file. Returns `{ "ok": true, "inserted": N, "existing": N, "total": N }`. Called once per candidate from `import-candidates`; a failed chunk is caught client-side and counted, the loop continues with the next candidate.
+
+#### `type=import-finalize` (Admin)
+
+```
+POST api.php?type=import-finalize
+Body: days[]=YYYY-MM-DD&…&files[]=<name>&…
+```
+
+Rebuilds `daily_summary` and recomputes `cost_brutto` for the given days, then archives the given files to `_Archiv/`. Returns `{ "ok": true, "days": N, "archived": [...], "recomputed": N }`. The client only lists files that had **no** failed chunk — a file with any failed day stays in `scrapes/` for a retry.
+
+The import button disables itself while the loop runs, shows progress (`x / N`), and reloads the page on completion; the result toast reports partial failures (with counts) separately from a hard/thrown error.
 
 ---
 

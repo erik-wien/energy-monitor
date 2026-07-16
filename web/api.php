@@ -463,6 +463,7 @@ if ($type === 'daily') {
         $r = php_import_day($pdo, $path, $day);
         api_json_send(['ok' => true, 'inserted' => $r['inserted'], 'existing' => $r['existing'], 'total' => $r['total']]);
     } catch (Throwable $e) {
+        appendLog($con, 'import', "Import-Abschnitt FAILED: {$name} {$day} — " . $e->getMessage());
         api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
 

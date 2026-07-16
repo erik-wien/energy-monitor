@@ -38,7 +38,7 @@ Key components:
 | `inc/db.php` | Includes `initialize.php`, opens PDO `$pdo` for data DB, derives `$base` URL prefix |
 | `inc/_chart_page.php` | Shared drilldown template: KPI strip, visibility pills, Chart.js datasets, print invoice popup |
 | `inc/_header.php` | Navigation bar, user menu, theme switcher |
-| `web/api.php` | Single JSON endpoint for all chart data (type=daily|weekly|monthly|yearly|set-theme|trigger-import) |
+| `web/api.php` | Single JSON endpoint for all chart data (type=daily|weekly|monthly|yearly|set-theme) plus the client-loop import routes (preview-import, import-candidates, import-chunk, import-finalize) |
 
 ### MariaDB
 
@@ -185,6 +185,6 @@ A complete round-trip for a daily drilldown page:
    Calls buildPrintContent() to pre-build the invoice popup HTML (stored in _printHTML)
 ```
 
-**Trigger-import:** A `POST api.php?type=trigger-import` request (from the header import button) spawns `energie.py import-csv` via `proc_open()` with an array argument list (no shell string, safe against injection). The response includes the captured stdout/stderr log.
+**Import (client loop, §20):** The header import button no longer shells out to `energie.py` synchronously. It drives a client-side loop against four routes: `preview-import` (POST+CSRF; scans `scrapes/` and returns totals plus a per-file format report, `dateien[].{name,ok,problem}` and `format_ok`), `import-candidates` (POST+CSRF; returns `candidates:[{file,date,rows}]`, one entry per file×day chunk), `import-chunk` (POST+CSRF+Admin; params `file`+`day`; imports one day from one file, returns `{inserted,existing,total}`), and `import-finalize` (POST+CSRF+Admin; params `files[]`+`days[]`; rebuilds `daily_summary` and recomputes cost for the given days, then archives only the given files). The client calls `import-chunk` once per candidate so each request stays well under any proxy/PHP timeout, then finalizes only with files that had no failed chunk — files with a failed day stay in `scrapes/` for retry.
 
 **Why two requests?** Separating HTML from data keeps the page responsive during the DB query. The KPI numbers (server-rendered) appear instantly; the chart fades in once the data arrives. It also enables the same `api.php` endpoint to serve Slack/other consumers.

@@ -89,7 +89,7 @@ function render_header(string $page_type): void
     $_isAdmin = (($_SESSION['rights'] ?? '') === 'Admin');
 
     $_extras = [];
-    if ($_import_count > 0) {
+    if ($_import_count > 0 && $_isAdmin) {
         $_extras[] = '<button class="dropdown-link-btn dropdown-link-btn--import" id="import-trigger" type="button">'
                    . 'Importieren (' . $_import_count . ')'
                    . '</button>';
@@ -115,7 +115,7 @@ function render_header(string $page_type): void
         'securityHref'  => $base . '/security.php',
     ]);
 
-    if ($_import_count > 0): ?>
+    if ($_import_count > 0 && $_isAdmin): ?>
 <dialog id="import-dialog">
     <h3>Import-Vorschau</h3>
     <div class="import-counts">
@@ -154,16 +154,18 @@ function render_header(string $page_type): void
         try {
             const _r = JSON.parse(_stored);
             const _el = document.createElement('div');
-            _el.className = 'alert ' + (_r.ok ? 'alert-success' : 'alert-danger');
-            _el.style.cssText = 'margin:0.75rem 1.5rem;';
-            if (_r.ok) {
+            if (_r.ok || _r.teilfehler) {
+                _el.className = 'alert ' + (_r.teilfehler ? 'alert-warning' : 'alert-success');
+                _el.style.cssText = 'margin:0.75rem 1.5rem;';
                 let msg = typeof _r.imported === 'number'
                     ? `Import: ${_r.total} gefunden, ${_r.existing} übersprungen, ${_r.imported} importiert.`
                     : (_r.log || 'OK').trim().slice(0, 200);
-                if (_r.failed) msg += `, ${_r.failed} Datei(en) fehlgeschlagen`;
+                if (_r.failed) msg += `, ${_r.failed} Abschnitt(e) fehlgeschlagen`;
                 if (_r.epexMonths) msg += ` Spot-Preise: ${_r.epexMonths} Monat(e) geladen.`;
                 _el.textContent = msg;
             } else {
+                _el.className = 'alert alert-danger';
+                _el.style.cssText = 'margin:0.75rem 1.5rem;';
                 _el.textContent = `Import fehlgeschlagen: ${(_r.error || _r.log || 'Unbekannter Fehler').trim().slice(0, 200)}`;
             }
             document.querySelector('.app-header')?.insertAdjacentElement('afterend', _el);
@@ -275,8 +277,9 @@ function render_header(string $page_type): void
                 impCsvSect.style.display = '';
                 impCsvBar.max   = cand.length || 1;
                 impCsvBar.value = 0;
-                const doneDays  = [];
-                const doneFiles = new Set();
+                const doneDays    = [];
+                const doneFiles   = new Set();
+                const failedFiles = new Set();
                 let failed = 0, imported = 0;
                 for (let i = 0; i < cand.length; i++) {
                     if (importAbbruch) break;
@@ -289,9 +292,13 @@ function render_header(string $page_type): void
                         doneFiles.add(c.file);
                     } catch (_) {
                         failed++;
+                        failedFiles.add(c.file);
                     }
                     impCsvBar.value = i + 1;
                 }
+                // Nur Dateien ohne fehlgeschlagenen Abschnitt archivieren (Dateien mit
+                // mindestens einem gescheiterten Tag bleiben in scrapes/ fuer einen Retry).
+                const archivableFiles = [...doneFiles].filter(f => !failedFiles.has(f));
                 let epex = {};
                 if (!importAbbruch && isAdmin) {
                     try { epex = await _fetchEpexWithProgress(); } catch (_) {}
@@ -299,7 +306,7 @@ function render_header(string $page_type): void
                 if (!importAbbruch && doneDays.length) {
                     await _apiJson('import-finalize',
                         doneDays.map(d => 'days[]=' + encodeURIComponent(d)).join('&') + '&' +
-                        [...doneFiles].map(f => 'files[]=' + encodeURIComponent(f)).join('&'));
+                        archivableFiles.map(f => 'files[]=' + encodeURIComponent(f)).join('&'));
                 }
                 importDialog.close();
                 importLaeuft = false;
@@ -307,6 +314,7 @@ function render_header(string $page_type): void
                     ? { ok: false, error: 'Import abgebrochen.' }
                     : Object.assign({
                           ok: failed === 0,
+                          teilfehler: failed > 0,
                           imported,
                           existing: lastPreview ? lastPreview.existing : undefined,
                           total: lastPreview ? lastPreview.total : undefined,
