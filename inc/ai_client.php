@@ -2,23 +2,26 @@
 declare(strict_types=1);
 
 /**
- * inc/ai_client.php — Haiku-Veredelungs-Client für den Dashboard-„Wetterbericht"
- * (s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md §2/§6).
- * Haiku bekommt NIE die rohen Fakten (JSON/Zahlen) — nur den bereits fertig
- * formatierten Template-Satz aus en_wetter_template() (inc/wetter.php), den es
- * sprachlich veredelt. Das verhindert Einheiten-Verwechslungen (z. B. ct/kWh-Preis
- * fälschlich als „Kilowattstunden verbraucht" vorgelesen) und Zahlensalat, weil
- * das Modell schlicht keine Rohzahlen mehr sieht, aus denen es welche erfinden
- * könnte. Fehler/Timeout/fehlender Key → null (Aufrufer fällt dann auf
+ * inc/ai_client.php — Haiku-Analyst-Client für den Dashboard-„Wetterbericht"
+ * (s. docs/superpowers/specs/2026-07-17-wetterbericht-v2-analyst.md §3).
+ * Haiku bekommt das einheiten-beschriftete Kennzahlen-Blatt aus
+ * en_wetter_faktenblatt() (inc/wetter.php) — beschriftete Klartext-Zeilen,
+ * NIE rohes JSON — und wählt daraus das Bemerkenswerteste aus (Trends,
+ * Vorjahresvergleich, Auffälligkeiten, Lastverschiebe-Disziplin). Die
+ * Arithmetik bleibt komplett in PHP; Haiku erfindet/ändert keine Zahlen.
+ * Fehler/Timeout/fehlender Key → null (Aufrufer fällt dann auf
  * en_wetter_template() zurück).
  */
 
 require_once __DIR__ . '/wetter.php';
 
-const EN_AI_SYSTEM_PROMPT = 'Hier ist ein Strom-Wetterbericht in nüchterner '
-    . 'Rohform. Formuliere ihn freundlicher und flüssiger (2–4 Sätze), OHNE '
-    . 'Zahlen, Einheiten oder Fakten zu ändern oder hinzuzufügen. Reiner '
-    . 'Fließtext: kein Markdown, keine Überschriften, keine Emojis.';
+const EN_AI_SYSTEM_PROMPT = 'Du bist ein nüchterner Strom-Analyst. Du bekommst '
+    . 'ein Kennzahlen-Blatt. Schreibe einen kurzen (2–4 Sätze), natürlichen '
+    . 'deutschen Wetterbericht und hebe das Bemerkenswerteste hervor — Trends, '
+    . 'Vorjahresvergleich, Auffälligkeiten, Lastverschiebe-Disziplin. Nutze '
+    . 'ausschließlich die gegebenen Zahlen mit ihren Einheiten; nichts '
+    . 'erfinden, nichts umrechnen. Kein Markdown, keine Emojis, reiner '
+    . 'Fließtext.';
 
 /** §11-Absicherung: entfernt Markdown-Überschriften/-Reste und Emojis, falls
  *  das Modell die Prompt-Vorgabe ignoriert. Reiner Text bleibt erhalten. */
@@ -53,17 +56,17 @@ function en_haiku_wetter(array $fakten, array $cfg, ?callable $http = null): ?st
     $url   = (string) ($cfg['url']   ?? '');
     $model = (string) ($cfg['model'] ?? '');
 
-    // Basistext = die bereits korrekte, Einheiten-sichere Template-Formulierung
-    // (inc/wetter.php) — das ist es, was Haiku sieht und veredelt, NIE die
-    // rohen Fakten/Zahlen selbst.
-    $basisText = en_wetter_template($fakten);
+    // User-Content = das beschriftete Kennzahlen-Blatt (inc/wetter.php) —
+    // Klartext-Zeilen mit Einheit pro Wert, NIE rohes JSON. Haiku analysiert
+    // dieses Blatt und wählt das Bemerkenswerte aus.
+    $faktenblatt = en_wetter_faktenblatt($fakten);
 
     $body = json_encode([
         'model'      => $model,
-        'max_tokens' => 300,
+        'max_tokens' => 320,
         'system'     => EN_AI_SYSTEM_PROMPT,
         'messages'   => [
-            ['role' => 'user', 'content' => $basisText],
+            ['role' => 'user', 'content' => $faktenblatt],
         ],
     ], JSON_UNESCAPED_UNICODE);
     if ($body === false) return null;

@@ -6,9 +6,9 @@ require_once __DIR__ . '/../../inc/ai_client.php';
 require_once __DIR__ . '/../../inc/wetter.php';
 
 /**
- * Tests for inc/ai_client.php — Haiku-Formulierungs-Client des Dashboard-
- * „Wetterberichts" (s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md
- * §2/§6). Rein — kein echter HTTP-Call, $http wird immer gemockt.
+ * Tests for inc/ai_client.php — Haiku-Analyst-Client des Dashboard-
+ * „Wetterberichts" (s. docs/superpowers/specs/2026-07-17-wetterbericht-v2-analyst.md
+ * §3/§6). Rein — kein echter HTTP-Call, $http wird immer gemockt.
  */
 final class AiClientTest extends TestCase {
     private const CFG = [
@@ -17,12 +17,26 @@ final class AiClientTest extends TestCase {
         'api_key' => 'sk-ant-test-key',
     ];
 
+    // v2-Fakten-Fixture (Struktur wie en_wetter_fakten() liefert, Spec §2).
     private const FAKTEN = [
-        'verbrauch' => ['ist_kwh' => 100.0, 'basis_kwh' => 120.0, 'delta_pct' => -0.1667],
-        'disziplin' => ['gew' => 10.0, 'einfach' => 12.0, 'gap_pct' => -0.1667, 'bewertung' => 'gut'],
-        'heute'     => ['datum' => '2026-07-17', 'avg' => 14.5, 'max' => 19.0, 'max_h' => 19,
-                         'min' => 8.0, 'min_h' => 3, 'spitzen' => [19], 'guenstig_von' => 12,
-                         'guenstig_bis' => 15, 'guenstig_avg' => 10.1],
+        'stand' => ['gestern' => '2026-07-16', 'heute' => '2026-07-17', 'morgen' => null, 'aktuell' => true],
+        'verbrauch' => [
+            'gestern_kwh' => 8.5, 'w7_kwh' => 62.0, 'w7_vorjahr_kwh' => 71.0, 'w7_yoy_pct' => -0.1267,
+            'd30_kwh' => 250.0, 'd30_ueblich_kwh' => 260.0, 'd30_delta_pct' => -0.0385, 'trend' => 'stabil',
+        ],
+        'disziplin' => [
+            'laeufe' => [['stunde' => 19, 'kwh' => 2.1, 'spot_ct' => 8.2, 'lage' => 'guenstig']],
+            'bewertung' => 'gut',
+        ],
+        'preis' => [
+            'heute' => ['avg' => 14.5, 'max' => 19.0, 'max_h' => 19, 'min' => 8.0, 'min_h' => 3,
+                        'spitzen' => [19], 'guenstig_von' => 12, 'guenstig_bis' => 15, 'guenstig_avg' => 10.1],
+            'morgen' => null,
+            'heute_vs_ueblich_pct' => -0.05, 'heute_vs_vorjahr_pct' => null,
+            'symbol' => 'wolke',
+        ],
+        'auffaellig' => ['Verbrauch letzte 7 Tage 12,7 % unter Vorjahr.'],
+        'vorschau' => false,
     ];
 
     public function test_200_mit_gueltigem_anthropic_json_liefert_text(): void {
@@ -107,14 +121,14 @@ final class AiClientTest extends TestCase {
         $decoded = json_decode($captured['body'], true);
         $this->assertIsArray($decoded);
         $this->assertSame('claude-haiku-4-5-20251001', $decoded['model']);
-        $this->assertSame(300, $decoded['max_tokens']);
-        $this->assertStringContainsString('Formuliere ihn freundlicher', $decoded['system']);
+        $this->assertSame(320, $decoded['max_tokens']);
+        $this->assertStringContainsString('nüchterner Strom-Analyst', $decoded['system']);
 
-        // User-Content = der deterministische Template-Text aus
-        // en_wetter_template($fakten) — NIE die rohen Fakten/Zahlen als JSON.
+        // User-Content = das beschriftete Kennzahlen-Blatt aus
+        // en_wetter_faktenblatt($fakten) — NIE rohes JSON.
         $userContent = $decoded['messages'][0]['content'];
         $this->assertIsString($userContent);
-        $this->assertSame(en_wetter_template(self::FAKTEN), $userContent);
+        $this->assertSame(en_wetter_faktenblatt(self::FAKTEN), $userContent);
     }
 
     public function test_en_ai_saeubern_entfernt_markdown_ueberschrift_und_emoji(): void {
