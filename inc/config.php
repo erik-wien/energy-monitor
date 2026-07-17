@@ -26,11 +26,11 @@ function energie_config_path(
     string $devIni = '/opt/homebrew/etc/energie-config-dev.ini',
     string $prodIni = '/opt/homebrew/etc/energie-config.ini'
 ): string {
-    // Prefer the generated config.yaml (single source of truth) when present.
-    // Falls through to the legacy INI pair only on hosts that still ship those.
-    $yaml = dirname(__DIR__) . '/config.yaml';
-    if (is_readable($yaml)) return $yaml;
-
+    // Pure INI routing. The config.yaml preference lives in the sole caller
+    // (energie_load_config, which checks config.yaml first); this helper is
+    // only reached once config.yaml has been ruled out, so it must not
+    // short-circuit on it — doing so also broke the hermetic routing tests
+    // whenever a real config.yaml happened to exist in the app root.
     $scriptName ??= $_SERVER['SCRIPT_NAME'] ?? '';
     $base = rtrim(dirname($scriptName), '/');
     return ($base === '/energie.test' && is_readable($devIni)) ? $devIni : $prodIni;
