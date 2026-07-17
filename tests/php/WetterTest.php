@@ -254,16 +254,97 @@ final class WetterTest extends TestCase {
         $this->assertNull($heute['guenstig_avg']);
     }
 
-    public function test_wetter_fakten_buendelt_alle_drei_bloecke(): void {
+    public function test_wetter_fakten_buendelt_alle_bloecke(): void {
         $this->seedTag('2026-07-01', 10.0, 12.0);
+        $this->seedTag('2026-07-16', 10.0, 12.0); // gestern (2026-07-17 - 1) hat Verbrauch -> aktuell=true
         $this->seedHourReading('2026-07-17', 12, 10.0);
 
-        $fakten = en_wetter_fakten($this->pdo, '2026-07-17');
+        $fakten = en_wetter_fakten($this->pdo, new DateTimeImmutable('2026-07-17 09:00:00'));
 
+        $this->assertArrayHasKey('stand', $fakten);
         $this->assertArrayHasKey('verbrauch', $fakten);
         $this->assertArrayHasKey('disziplin', $fakten);
-        $this->assertArrayHasKey('heute', $fakten);
-        $this->assertSame('2026-07-17', $fakten['heute']['datum']);
+        $this->assertArrayHasKey('preis', $fakten);
+        $this->assertArrayHasKey('auffaellig', $fakten);
+        $this->assertSame('2026-07-16', $fakten['stand']['gestern']);
+        $this->assertSame('2026-07-17', $fakten['stand']['heute']);
+        $this->assertNull($fakten['stand']['morgen']);
+        $this->assertTrue($fakten['stand']['aktuell']);
+        $this->assertSame('2026-07-17', $fakten['preis']['heute']['datum']);
+        $this->assertFalse($fakten['vorschau']);
+    }
+
+    public function test_wetter_fakten_aktuell_false_wenn_gestern_verbrauch_fehlt(): void {
+        // Keine daily_summary-Zeile für gestern (2026-07-16).
+        $fakten = en_wetter_fakten($this->pdo, new DateTimeImmutable('2026-07-17 09:00:00'));
+
+        $this->assertFalse($fakten['stand']['aktuell']);
+        $this->assertNull($fakten['verbrauch']['gestern_kwh']);
+    }
+
+    public function test_wetter_fakten_mit_profil_morgen_setzt_stand_und_vorschau(): void {
+        $this->seedTag('2026-07-16', 5.0, 12.0);
+        $this->seedHourReading('2026-07-17', 12, 10.0);
+        $this->seedHourReading('2026-07-18', 12, 8.0);
+
+        $fakten = en_wetter_fakten($this->pdo, new DateTimeImmutable('2026-07-17 15:00:00'), '2026-07-18');
+
+        $this->assertSame('2026-07-18', $fakten['stand']['morgen']);
+        $this->assertTrue($fakten['vorschau']);
+        $this->assertNotNull($fakten['preis']['morgen']);
+        $this->assertSame('2026-07-18', $fakten['preis']['morgen']['datum']);
+    }
+
+    // ── en_wetter_faktenblatt (reine Funktion, keine DB) ────────────────────
+
+    public function test_faktenblatt_enthaelt_einheiten_und_laesst_fehlwerte_aus(): void {
+        $fakten = [
+            'stand' => ['gestern' => '2026-07-16', 'heute' => '2026-07-17', 'morgen' => null, 'aktuell' => true],
+            'verbrauch' => [
+                'gestern_kwh' => 5.0, 'w7_kwh' => 30.0, 'w7_vorjahr_kwh' => 35.0, 'w7_yoy_pct' => -0.1429,
+                'd30_kwh' => 120.0, 'd30_ueblich_kwh' => null, 'd30_delta_pct' => null, 'trend' => 'stabil',
+            ],
+            'disziplin' => ['laeufe' => [], 'bewertung' => null],
+            'preis' => [
+                'heute' => [
+                    'datum' => '2026-07-17', 'avg' => 12.5, 'max' => 20.0, 'max_h' => 18, 'min' => 5.0, 'min_h' => 3,
+                    'spitzen' => [], 'guenstig_von' => 2, 'guenstig_bis' => 5, 'guenstig_avg' => 6.0,
+                ],
+                'morgen' => null, 'heute_vs_ueblich_pct' => 0.1, 'heute_vs_vorjahr_pct' => null, 'symbol' => 'wolke',
+            ],
+            'auffaellig' => ['Verbrauch gestern 5,0 kWh, deutlich über dem Üblichen (Ø 2,0 kWh).'],
+            'vorschau' => false,
+        ];
+
+        $blatt = en_wetter_faktenblatt($fakten);
+
+        $this->assertStringContainsString('kWh', $blatt);
+        $this->assertStringContainsString('ct/kWh', $blatt);
+        $this->assertStringContainsString('%', $blatt);
+        $this->assertStringContainsString('Auffällig:', $blatt);
+        $this->assertStringNotContainsString('null', $blatt);
+        // d30_ueblich_kwh fehlt -> keine Vorjahres-/üblich-Klammer für die 30-Tage-Zeile.
+        $this->assertStringNotContainsString('üblich:', $blatt);
+        // heute_vs_vorjahr_pct fehlt -> keine Vorjahres-Preis-Zeile.
+        $this->assertStringNotContainsString('Vorjahr (±3 Tage)', $blatt);
+        // aktuell=true -> keine Hinweis-Zeile.
+        $this->assertStringNotContainsString('Hinweis', $blatt);
+    }
+
+    public function test_faktenblatt_hinweis_zeile_wenn_nicht_aktuell(): void {
+        $blatt = en_wetter_faktenblatt(en_wetter_fakten_leer());
+
+        $this->assertStringContainsString('Hinweis', $blatt);
+        $this->assertStringContainsString('gestrige Verbrauchsdaten fehlen', $blatt);
+    }
+
+    public function test_faktenblatt_ohne_hinweis_wenn_aktuell(): void {
+        $fakten = en_wetter_fakten_leer();
+        $fakten['stand']['aktuell'] = true;
+
+        $blatt = en_wetter_faktenblatt($fakten);
+
+        $this->assertStringNotContainsString('Hinweis', $blatt);
     }
 
     // ── en_wetter_symbol ─────────────────────────────────────────────────────
@@ -419,9 +500,10 @@ final class WetterTest extends TestCase {
         // Kein echter Cache -> Slot bewusst '' (weicht von jedem echten Slot ab,
         // damit der Aufrufer einmalig eine Off-Path-Regeneration anstößt).
         $this->assertSame('', $result['slot']);
+        $this->assertArrayHasKey('stand', $result['fakten']);
         $this->assertArrayHasKey('verbrauch', $result['fakten']);
         $this->assertArrayHasKey('disziplin', $result['fakten']);
-        $this->assertArrayHasKey('heute', $result['fakten']);
+        $this->assertArrayHasKey('preis', $result['fakten']);
         $this->assertNotSame('', $result['text']);
         $this->assertIsString($result['datum']);
         $this->assertIsString($result['erzeugt_at']);
@@ -449,11 +531,11 @@ final class WetterTest extends TestCase {
 
     public function test_regenerieren_schreibt_gueltigen_cache_atomar(): void {
         $path = $this->tmpCachePfad(); // Verzeichnis existiert bewusst noch nicht.
-        $this->seedTag('2026-07-01', 10.0, 12.0);
-        $this->seedHourReading('2026-07-01', 12, 10.0);
+        $this->seedTag('2026-07-01', 10.0, 12.0); // gestern (2026-07-02 - 1)
+        $this->seedHourReading('2026-07-02', 12, 10.0);
 
         // Leere ai-Config → en_haiku_wetter liefert sofort null → Template-Fallback.
-        $now    = new DateTimeImmutable('2026-07-01 09:00:00');
+        $now    = new DateTimeImmutable('2026-07-02 09:00:00');
         $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
 
         $this->assertFileExists($path);
@@ -462,8 +544,10 @@ final class WetterTest extends TestCase {
         $this->assertSame('template', $onDisk['quelle']);
         $this->assertNotSame('', $onDisk['text']);
         $this->assertArrayHasKey('disziplin', $onDisk['fakten']);
-        $this->assertSame('2026-07-01', $onDisk['datum']);
-        $this->assertSame('2026-07-01#vor', $onDisk['slot']);
+        $this->assertSame('2026-07-01', $onDisk['datum']); // stand.gestern
+        $this->assertSame('2026-07-02#vor', $onDisk['slot']);
+        $this->assertSame($onDisk['fakten']['stand'], $onDisk['stand']);
+        $this->assertSame($onDisk['fakten']['preis']['symbol'], $onDisk['symbol']);
 
         // Atomarer Write (tmp-Datei + rename): keine liegen gebliebene tmp-Datei.
         $this->assertSame([], glob(dirname($path) . '/*.tmp*') ?: []);
@@ -521,7 +605,7 @@ final class WetterTest extends TestCase {
 
     public function test_regenerieren_vor_14_kein_vorschau_auch_wenn_morgen_preise_da(): void {
         $path = $this->tmpCachePfad();
-        $this->seedTag('2026-07-17', 10.0, 12.0);
+        $this->seedTag('2026-07-16', 10.0, 12.0); // gestern (2026-07-17 - 1)
         $this->seedHourReading('2026-07-18', 12, 15.0); // Morgen-Preise liegen vor
         $now = new DateTimeImmutable('2026-07-17 09:00:00'); // #vor
 
@@ -529,12 +613,14 @@ final class WetterTest extends TestCase {
 
         $this->assertSame('2026-07-17#vor', $result['slot']);
         $this->assertFalse($result['fakten']['vorschau']);
-        $this->assertSame('2026-07-17', $result['fakten']['heute']['datum']);
+        $this->assertNull($result['fakten']['preis']['morgen']);
+        $this->assertNull($result['fakten']['stand']['morgen']);
+        $this->assertSame('2026-07-17', $result['fakten']['preis']['heute']['datum']);
     }
 
     public function test_regenerieren_nach_14_mit_morgen_preisen_vorschau(): void {
         $path = $this->tmpCachePfad();
-        $this->seedTag('2026-07-17', 10.0, 12.0);
+        $this->seedTag('2026-07-16', 10.0, 12.0); // gestern (2026-07-17 - 1)
         $this->seedHourReading('2026-07-18', 12, 15.0); // Morgen-Preise liegen vor
         $now = new DateTimeImmutable('2026-07-17 15:00:00'); // #nach
 
@@ -542,35 +628,54 @@ final class WetterTest extends TestCase {
 
         $this->assertSame('2026-07-17#nach', $result['slot']);
         $this->assertTrue($result['fakten']['vorschau']);
-        $this->assertSame('2026-07-18', $result['fakten']['heute']['datum']);
+        $this->assertSame('2026-07-18', $result['fakten']['stand']['morgen']);
+        $this->assertSame('2026-07-18', $result['fakten']['preis']['morgen']['datum']);
         $this->assertStringContainsString('Vorschau auf morgen', $result['text']);
     }
 
     public function test_regenerieren_nach_14_ohne_morgen_preise_fallback_heute(): void {
         $path = $this->tmpCachePfad();
-        $this->seedTag('2026-07-17', 10.0, 12.0);
+        $this->seedTag('2026-07-16', 10.0, 12.0); // gestern (2026-07-17 - 1)
         $this->seedHourReading('2026-07-17', 12, 10.0); // nur heutige Preise, keine für morgen
         $now = new DateTimeImmutable('2026-07-17 15:00:00'); // #nach
 
         $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
 
         $this->assertFalse($result['fakten']['vorschau']);
-        $this->assertSame('2026-07-17', $result['fakten']['heute']['datum']);
+        $this->assertNull($result['fakten']['preis']['morgen']);
         $this->assertStringNotContainsString('Vorschau auf morgen', $result['text']);
     }
 
     // ── en_wetter_template (reine Funktion, keine DB) ────────────────────────
 
-    public function test_template_enthaelt_kernzahlen(): void {
-        $fakten = [
-            'verbrauch' => ['ist_kwh' => 190.0, 'basis_kwh' => 276.0, 'delta_pct' => -0.311],
-            'disziplin' => ['gew' => 9.7, 'einfach' => 11.8, 'gap_pct' => -0.1805, 'bewertung' => 'gut'],
-            'heute'     => [
-                'datum' => '2026-07-17', 'avg' => 14.5, 'max' => 18.0, 'max_h' => 19,
-                'min' => 9.8, 'min_h' => 13, 'spitzen' => [],
-                'guenstig_von' => 12, 'guenstig_bis' => 15, 'guenstig_avg' => 10.1,
+    /** Minimal-Fakten-Fixture (neue Struktur) mit lauter Null-Feldern, außer wo überschrieben. */
+    private function fiktiveFaktenLeer(array $overrides = []): array {
+        $basis = [
+            'stand'     => ['gestern' => '2026-07-16', 'heute' => '2026-07-17', 'morgen' => null, 'aktuell' => true],
+            'verbrauch' => ['gestern_kwh' => null, 'w7_kwh' => 0.0, 'w7_vorjahr_kwh' => null, 'w7_yoy_pct' => null,
+                'd30_kwh' => 0.0, 'd30_ueblich_kwh' => null, 'd30_delta_pct' => null, 'trend' => null],
+            'disziplin' => ['laeufe' => [], 'bewertung' => null],
+            'preis'     => [
+                'heute' => ['datum' => '2026-07-17', 'avg' => null, 'max' => null, 'max_h' => null,
+                    'min' => null, 'min_h' => null, 'spitzen' => [],
+                    'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null],
+                'morgen' => null, 'heute_vs_ueblich_pct' => null, 'heute_vs_vorjahr_pct' => null, 'symbol' => 'wolke',
             ],
+            'auffaellig' => [],
+            'vorschau'   => false,
         ];
+        return array_replace_recursive($basis, $overrides);
+    }
+
+    public function test_template_enthaelt_kernzahlen(): void {
+        $fakten = $this->fiktiveFaktenLeer([
+            'verbrauch' => ['d30_kwh' => 190.0, 'd30_ueblich_kwh' => 276.0, 'd30_delta_pct' => -0.311],
+            'disziplin' => ['bewertung' => 'gut'],
+            'preis'     => ['heute' => [
+                'avg' => 14.5, 'max' => 18.0, 'max_h' => 19, 'min' => 9.8, 'min_h' => 13,
+                'guenstig_von' => 12, 'guenstig_bis' => 15, 'guenstig_avg' => 10.1,
+            ]],
+        ]);
 
         $text = en_wetter_template($fakten);
 
@@ -580,17 +685,7 @@ final class WetterTest extends TestCase {
     }
 
     public function test_template_ueberspringt_null_felder(): void {
-        $fakten = [
-            'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
-            'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
-            'heute'     => [
-                'datum' => '2026-07-17', 'avg' => null, 'max' => null, 'max_h' => null,
-                'min' => null, 'min_h' => null, 'spitzen' => [],
-                'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
-            ],
-        ];
-
-        $text = en_wetter_template($fakten);
+        $text = en_wetter_template($this->fiktiveFaktenLeer());
 
         $this->assertNotSame('', $text); // Neutraltext, kein leerer String
         $this->assertStringNotContainsString('%', $text);
@@ -604,16 +699,15 @@ final class WetterTest extends TestCase {
     }
 
     public function test_template_vorschau_auf_morgen(): void {
-        $fakten = [
-            'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
-            'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
-            'heute'     => [
+        $fakten = $this->fiktiveFaktenLeer([
+            'stand' => ['morgen' => '2026-07-18'],
+            'preis'  => ['morgen' => [
                 'datum' => '2026-07-18', 'avg' => 14.5, 'max' => 18.0, 'max_h' => 19,
                 'min' => 9.8, 'min_h' => 13, 'spitzen' => [],
                 'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
-            ],
-            'vorschau'  => true,
-        ];
+            ]],
+            'vorschau' => true,
+        ]);
 
         $text = en_wetter_template($fakten);
 
@@ -621,20 +715,22 @@ final class WetterTest extends TestCase {
     }
 
     public function test_template_ohne_vorschau_flag_heute_wortlaut(): void {
-        $fakten = [
-            'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
-            'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
-            'heute'     => [
-                'datum' => '2026-07-17', 'avg' => 14.5, 'max' => null, 'max_h' => null,
-                'min' => null, 'min_h' => null, 'spitzen' => [],
-                'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
-            ],
-        ];
+        $fakten = $this->fiktiveFaktenLeer([
+            'preis' => ['heute' => ['avg' => 14.5]],
+        ]);
 
         $text = en_wetter_template($fakten);
 
         $this->assertStringContainsString('Heute liegt der Strompreis', $text);
         $this->assertStringNotContainsString('Vorschau auf morgen', $text);
+    }
+
+    public function test_template_hinweis_wenn_nicht_aktuell(): void {
+        $fakten = $this->fiktiveFaktenLeer(['stand' => ['aktuell' => false]]);
+
+        $text = en_wetter_template($fakten);
+
+        $this->assertStringContainsString('noch nicht ganz aktuell', $text);
     }
 
     // ── DB-Scaffolding (Muster wie InsightTest/CsvImporterTest) ─────────────

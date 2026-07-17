@@ -13,27 +13,49 @@ declare(strict_types=1);
 require_once __DIR__ . '/ai_client.php';
 
 /**
- * en_wetter_fakten() — bündelt die drei Fakten-Blöcke für den Wetterbericht,
- * verankert auf den Tag $latest (Format 'Y-m-d'). Das „heute"-Preisprofil kann
- * per $profilTag auf einen anderen Tag verschoben werden (Morgen-Vorschau im
- * #nach-Slot, s. en_wetter_regenerieren()); $vorschau markiert das für
- * en_wetter_template() ("Vorschau auf morgen" statt "Heute").
+ * en_wetter_fakten() — bündelt das Kennzahlen-Blatt für den Wetterbericht
+ * (Spec §2, docs/superpowers/specs/2026-07-17-wetterbericht-v2-analyst.md):
+ * Auswertung ankert auf $now−1 Tag ("gestern", das letzte potentiell
+ * vollständige Tages). $profilMorgen (Format 'Y-m-d') ist das Morgen-Datum,
+ * WENN der Aufrufer (en_wetter_regenerieren()) im #nach-Slot bereits
+ * Morgen-Spotdaten gefunden hat — sonst null (kein Morgen-Profil/keine
+ * Vorschau). `stand.aktuell` ist false, wenn für "gestern" noch keine
+ * Verbrauchsdaten vorliegen (verbrauch.gestern_kwh === null); der Bericht
+ * wird trotzdem erzeugt, nie leer/blockierend.
  *
  * @return array{
- *   verbrauch: array{ist_kwh: float, basis_kwh: float, delta_pct: ?float},
- *   disziplin: array{gew: ?float, einfach: ?float, gap_pct: ?float, bewertung: string},
- *   heute: array{datum: string, avg: ?float, max: ?float, max_h: ?int, min: ?float,
- *                min_h: ?int, spitzen: int[], guenstig_von: ?int, guenstig_bis: ?int,
- *                guenstig_avg: ?float},
+ *   stand: array{gestern: string, heute: string, morgen: ?string, aktuell: bool},
+ *   verbrauch: array{gestern_kwh: ?float, w7_kwh: float, w7_vorjahr_kwh: ?float,
+ *              w7_yoy_pct: ?float, d30_kwh: float, d30_ueblich_kwh: ?float,
+ *              d30_delta_pct: ?float, trend: ?string},
+ *   disziplin: array{laeufe: array, bewertung: ?string},
+ *   preis: array{heute: array, morgen: ?array, heute_vs_ueblich_pct: ?float,
+ *              heute_vs_vorjahr_pct: ?float, symbol: string},
+ *   auffaellig: string[],
  *   vorschau: bool
  * }
  */
-function en_wetter_fakten(PDO $pdo, string $latest, ?string $profilTag = null, bool $vorschau = false): array {
+function en_wetter_fakten(PDO $pdo, ?DateTimeImmutable $now = null, ?string $profilMorgen = null): array {
+    $now     ??= new DateTimeImmutable();
+    $heute     = $now->format('Y-m-d');
+    $gestern   = $now->modify('-1 day')->format('Y-m-d');
+
+    $verbrauch = en_wetter_verbrauch($pdo, $gestern);
+    $disziplin = en_wetter_disziplin($pdo, $gestern);
+    $preis     = en_wetter_preis($pdo, $heute, $profilMorgen);
+
     return [
-        'verbrauch' => en_wetter_verbrauch($pdo, $latest),
-        'disziplin' => en_wetter_disziplin($pdo, $latest),
-        'heute'     => en_wetter_heute($pdo, $profilTag ?? $latest),
-        'vorschau'  => $vorschau,
+        'stand' => [
+            'gestern' => $gestern,
+            'heute'   => $heute,
+            'morgen'  => $profilMorgen,
+            'aktuell' => $verbrauch['gestern_kwh'] !== null,
+        ],
+        'verbrauch'  => $verbrauch,
+        'disziplin'  => $disziplin,
+        'preis'      => $preis,
+        'auffaellig' => en_wetter_auffaelligkeiten($pdo, $gestern, $preis['heute']),
+        'vorschau'   => $profilMorgen !== null,
     ];
 }
 
@@ -439,15 +461,124 @@ function en_wetter_auffaelligkeiten(PDO $pdo, string $gestern, array $preisHeute
     return $auffaellig;
 }
 
+/** Formatiert einen Anteilswert (z. B. 0.13) als vorzeichenbehaftete Ganzzahl-Prozentangabe ("+13 %"/"-13 %"). */
+function en_wetter_pct_signed(float $pct): string {
+    $rounded = (int) round($pct * 100);
+    return ($rounded >= 0 ? '+' : '') . $rounded . ' %';
+}
+
+/** Rendert eine Zahl mit einer Nachkommastelle im deutschen Zahlenformat. */
+function en_wetter_zahl(float $n): string {
+    return number_format($n, 1, ',', '.');
+}
+
+/**
+ * en_wetter_faktenblatt() — rendert das Kennzahlen-Blatt (Spec §3) als
+ * beschriftete Klartext-Zeilen mit Einheit pro Wert (kein JSON) — das ist
+ * der User-Content, den Haiku als Analyst bekommt (en_haiku_wetter()).
+ * Fehlende Werte werden ausgelassen (nie als "null" geschrieben); ist
+ * `stand.aktuell` false, trägt das Blatt zusätzlich eine Hinweis-Zeile.
+ */
+function en_wetter_faktenblatt(array $fakten): string {
+    $zeilen = [];
+
+    $v = $fakten['verbrauch'] ?? [];
+    if (($v['gestern_kwh'] ?? null) !== null) {
+        $zeilen[] = "Verbrauch gestern: " . en_wetter_zahl($v['gestern_kwh']) . " kWh";
+    }
+    if (isset($v['w7_kwh'])) {
+        $zeile = "Verbrauch letzte 7 Tage: " . en_wetter_zahl($v['w7_kwh']) . " kWh";
+        if (($v['w7_vorjahr_kwh'] ?? null) !== null) {
+            $zeile .= " (Vorjahr gleiche Woche: " . en_wetter_zahl($v['w7_vorjahr_kwh']) . " kWh";
+            if (($v['w7_yoy_pct'] ?? null) !== null) {
+                $zeile .= ", " . en_wetter_pct_signed($v['w7_yoy_pct']);
+            }
+            $zeile .= ")";
+        }
+        $zeilen[] = $zeile;
+    }
+    if (isset($v['d30_kwh'])) {
+        $zeile = "Verbrauch letzte 30 Tage: " . en_wetter_zahl($v['d30_kwh']) . " kWh";
+        if (($v['d30_ueblich_kwh'] ?? null) !== null) {
+            $zeile .= " (üblich: " . en_wetter_zahl($v['d30_ueblich_kwh']) . " kWh";
+            if (($v['d30_delta_pct'] ?? null) !== null) {
+                $zeile .= ", " . en_wetter_pct_signed($v['d30_delta_pct']);
+            }
+            $zeile .= ")";
+        }
+        $zeilen[] = $zeile;
+    }
+    if (($v['trend'] ?? null) !== null) {
+        $zeilen[] = "Verbrauchstrend (30 Tage ggü. den 30 Tagen davor): {$v['trend']}";
+    }
+
+    $d = $fakten['disziplin'] ?? [];
+    foreach (($d['laeufe'] ?? []) as $lauf) {
+        $zeilen[] = "Starkverbraucher-Stunde {$lauf['stunde']} Uhr: " . en_wetter_zahl($lauf['kwh'])
+            . " kWh bei " . en_wetter_zahl($lauf['spot_ct']) . " ct/kWh ({$lauf['lage']})";
+    }
+    if (($d['bewertung'] ?? null) !== null) {
+        $zeilen[] = "Lastdisziplin-Bewertung: {$d['bewertung']}";
+    }
+
+    $p = $fakten['preis'] ?? [];
+    $heuteProfil = $p['heute'] ?? [];
+    if (($heuteProfil['avg'] ?? null) !== null) {
+        $zeile = "Heutiges Preisprofil: Ø " . en_wetter_zahl($heuteProfil['avg']) . " ct/kWh";
+        if (($heuteProfil['max'] ?? null) !== null && ($heuteProfil['max_h'] ?? null) !== null) {
+            $zeile .= ", Spitze " . en_wetter_zahl($heuteProfil['max']) . " ct/kWh um {$heuteProfil['max_h']} Uhr";
+        }
+        if (($heuteProfil['guenstig_von'] ?? null) !== null && ($heuteProfil['guenstig_bis'] ?? null) !== null) {
+            $zeile .= ", günstigstes Fenster {$heuteProfil['guenstig_von']}-{$heuteProfil['guenstig_bis']} Uhr (Ø "
+                . en_wetter_zahl($heuteProfil['guenstig_avg']) . " ct/kWh)";
+        }
+        $zeilen[] = $zeile;
+    }
+    $morgenProfil = $p['morgen'] ?? null;
+    if ($morgenProfil !== null && ($morgenProfil['avg'] ?? null) !== null) {
+        $zeile = "Morgiges Preisprofil: Ø " . en_wetter_zahl($morgenProfil['avg']) . " ct/kWh";
+        if (($morgenProfil['max'] ?? null) !== null && ($morgenProfil['max_h'] ?? null) !== null) {
+            $zeile .= ", Spitze " . en_wetter_zahl($morgenProfil['max']) . " ct/kWh um {$morgenProfil['max_h']} Uhr";
+        }
+        $zeilen[] = $zeile;
+    }
+    if (($p['heute_vs_ueblich_pct'] ?? null) !== null) {
+        $zeilen[] = "Heutiger Preis vs. übliche 30 Tage: " . en_wetter_pct_signed($p['heute_vs_ueblich_pct']);
+    }
+    if (($p['heute_vs_vorjahr_pct'] ?? null) !== null) {
+        $zeilen[] = "Heutiger Preis vs. Vorjahr (±3 Tage): " . en_wetter_pct_signed($p['heute_vs_vorjahr_pct']);
+    }
+
+    foreach (($fakten['auffaellig'] ?? []) as $text) {
+        $zeilen[] = "Auffällig: {$text}";
+    }
+
+    $aktuell = $fakten['stand']['aktuell'] ?? true;
+    if ($aktuell === false) {
+        $zeilen[] = "Hinweis: gestrige Verbrauchsdaten fehlen noch — bitte die gestrigen Werte laden.";
+    }
+
+    if (!$zeilen) {
+        return "Keine Kennzahlen verfügbar.";
+    }
+
+    return implode("\n", $zeilen);
+}
+
 /**
  * en_wetter_template() — deterministischer 2–4-Satz-Bericht aus Satzbausteinen
- * (Fallback ohne KI, s. Spec §1). Null-Felder werden übersprungen; völlig leere
- * Fakten liefern einen neutralen Hinweistext (nie leerer String).
+ * (Fallback ohne KI, s. Spec §1/§3). Baut auf der neuen en_wetter_fakten()-
+ * Struktur auf: Verbrauch-Delta (+YoY), Disziplin-Kurzsatz, heutiges (+ ggf.
+ * morgiges) Preisprofil, weicher Hinweis wenn `stand.aktuell` false ist.
+ * Null-Felder werden übersprungen; völlig leere Fakten liefern einen
+ * neutralen Hinweistext (nie leerer String). Kein Anspruch, das Bemerkens-
+ * werteste auszuwählen wie der Haiku-Analyst — reine Absicherung.
  */
 function en_wetter_template(array $fakten): string {
     $saetze = [];
 
-    $delta = $fakten['verbrauch']['delta_pct'] ?? null;
+    $v = $fakten['verbrauch'] ?? [];
+    $delta = $v['d30_delta_pct'] ?? null;
     if ($delta !== null) {
         $pct = abs((int) round($delta * 100));
         $saetze[] = $delta < 0
@@ -455,40 +586,57 @@ function en_wetter_template(array $fakten): string {
             : "Dein Verbrauch lag in den letzten 30 Tagen {$pct} % über deinem üblichen Niveau.";
     }
 
-    $gap = $fakten['disziplin']['gap_pct'] ?? null;
-    if ($gap !== null) {
-        $pct = abs((int) round($gap * 100));
-        $bewertung = $fakten['disziplin']['bewertung'] ?? 'neutral';
-        if ($bewertung === 'gut') {
-            $saetze[] = "Deine Lastverschiebung zahlt sich aus: dein gewichteter Preis liegt {$pct} % unter dem einfachen Durchschnitt.";
-        } elseif ($bewertung === 'unguenstig') {
-            $saetze[] = "Deine Lastverschiebung könnte besser laufen: dein gewichteter Preis liegt {$pct} % über dem einfachen Durchschnitt.";
-        } else {
-            $saetze[] = "Deine Lastverschiebung liegt im neutralen Bereich.";
-        }
+    $yoy = $v['w7_yoy_pct'] ?? null;
+    if ($yoy !== null) {
+        $pct = abs((int) round($yoy * 100));
+        $saetze[] = $yoy < 0
+            ? "Im Vorjahresvergleich (letzte 7 Tage) sparst du {$pct} %."
+            : "Im Vorjahresvergleich (letzte 7 Tage) verbrauchst du {$pct} % mehr.";
     }
 
-    $avg  = $fakten['heute']['avg']   ?? null;
-    $maxH = $fakten['heute']['max_h'] ?? null;
-    $max  = $fakten['heute']['max']   ?? null;
+    $bewertung = $fakten['disziplin']['bewertung'] ?? null;
+    if ($bewertung !== null) {
+        $saetze[] = match ($bewertung) {
+            'gut'        => "Deine Lastverschiebung zahlt sich aus: die Starkverbraucher-Stunden lagen überwiegend im günstigen Bereich.",
+            'unguenstig' => "Deine Lastverschiebung könnte besser laufen: die Starkverbraucher-Stunden lagen überwiegend im teuren Bereich.",
+            default      => "Deine Lastverschiebung liegt im neutralen Bereich.",
+        };
+    }
+
+    $heuteProfil = $fakten['preis']['heute'] ?? [];
+    $avg  = $heuteProfil['avg']   ?? null;
+    $maxH = $heuteProfil['max_h'] ?? null;
+    $max  = $heuteProfil['max']   ?? null;
     if ($avg !== null) {
-        $vorschau = $fakten['vorschau'] ?? false;
-        $lead     = $vorschau ? 'Vorschau auf morgen: der Strompreis liegt' : 'Heute liegt der Strompreis';
-        $avgTxt   = number_format($avg, 1, ',', '.');
+        $avgTxt = number_format($avg, 1, ',', '.');
         if ($max !== null && $maxH !== null) {
             $maxTxt = number_format($max, 1, ',', '.');
-            $saetze[] = "{$lead} im Schnitt bei {$avgTxt} ct/kWh, mit einer Spitze um {$maxH} Uhr ({$maxTxt} ct/kWh).";
+            $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh, mit einer Spitze um {$maxH} Uhr ({$maxTxt} ct/kWh).";
         } else {
-            $saetze[] = "{$lead} im Schnitt bei {$avgTxt} ct/kWh.";
+            $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh.";
         }
     }
 
-    $von  = $fakten['heute']['guenstig_von']  ?? null;
-    $bis  = $fakten['heute']['guenstig_bis']  ?? null;
-    $gAvg = $fakten['heute']['guenstig_avg']  ?? null;
+    $von  = $heuteProfil['guenstig_von'] ?? null;
+    $bis  = $heuteProfil['guenstig_bis'] ?? null;
+    $gAvg = $heuteProfil['guenstig_avg'] ?? null;
     if ($von !== null && $bis !== null && $gAvg !== null) {
         $gTxt = number_format($gAvg, 1, ',', '.');
         $saetze[] = "Am günstigsten ist es zwischen {$von} und {$bis} Uhr (Ø {$gTxt} ct/kWh).";
+    }
+
+    $morgenProfil = $fakten['preis']['morgen'] ?? null;
+    if ($morgenProfil !== null) {
+        $mAvg = $morgenProfil['avg'] ?? null;
+        if ($mAvg !== null) {
+            $mAvgTxt = number_format($mAvg, 1, ',', '.');
+            $saetze[] = "Vorschau auf morgen: der Strompreis liegt im Schnitt bei {$mAvgTxt} ct/kWh.";
+        }
+    }
+
+    $aktuell = $fakten['stand']['aktuell'] ?? true;
+    if ($aktuell === false) {
+        $saetze[] = "Hinweis: noch nicht ganz aktuell — bitte die gestrigen Werte laden.";
     }
 
     if (!$saetze) {
@@ -507,15 +655,26 @@ function en_wetter_cache_pfad(): string {
 
 /** Neutrale, DB-lose Fakten (aller Werte null/leer) — Notanker wenn keine DB verfügbar ist. */
 function en_wetter_fakten_leer(): array {
+    $heute   = date('Y-m-d');
+    $gestern = date('Y-m-d', strtotime('-1 day'));
+    $leeresProfil = [
+        'datum' => $heute, 'avg' => null, 'max' => null, 'max_h' => null,
+        'min' => null, 'min_h' => null, 'spitzen' => [],
+        'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+    ];
     return [
-        'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
-        'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
-        'heute'     => [
-            'datum' => date('Y-m-d'), 'avg' => null, 'max' => null, 'max_h' => null,
-            'min' => null, 'min_h' => null, 'spitzen' => [],
-            'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+        'stand'     => ['gestern' => $gestern, 'heute' => $heute, 'morgen' => null, 'aktuell' => false],
+        'verbrauch' => [
+            'gestern_kwh' => null, 'w7_kwh' => 0.0, 'w7_vorjahr_kwh' => null, 'w7_yoy_pct' => null,
+            'd30_kwh' => 0.0, 'd30_ueblich_kwh' => null, 'd30_delta_pct' => null, 'trend' => null,
         ],
-        'vorschau'  => false,
+        'disziplin' => ['laeufe' => [], 'bewertung' => null],
+        'preis'     => [
+            'heute' => $leeresProfil, 'morgen' => null,
+            'heute_vs_ueblich_pct' => null, 'heute_vs_vorjahr_pct' => null, 'symbol' => 'wolke',
+        ],
+        'auffaellig' => [],
+        'vorschau'   => false,
     ];
 }
 
@@ -527,12 +686,6 @@ function en_wetter_fakten_leer(): array {
  */
 function en_wetter_slot(DateTimeImmutable $now): string {
     return $now->format('Y-m-d') . ((int) $now->format('H') < 14 ? '#vor' : '#nach');
-}
-
-/** Letzter Tag mit tatsächlichem Verbrauch (Muster wie web/index.php). */
-function en_wetter_latest_tag(PDO $pdo): ?string {
-    $latest = $pdo->query("SELECT MAX(day) FROM daily_summary WHERE consumed_kwh > 0")->fetchColumn();
-    return ($latest !== false && $latest !== null) ? (string) $latest : null;
 }
 
 /** Liest+validiert den Cache; null wenn Datei fehlt oder Inhalt unbrauchbar ist. */
@@ -591,9 +744,8 @@ function en_wetter_lesen(?PDO $pdo = null, ?string $cachePath = null): array {
 
     if ($pdo instanceof PDO) {
         try {
-            $latest = en_wetter_latest_tag($pdo) ?? $datum;
-            $fakten = en_wetter_fakten($pdo, $latest);
-            $datum  = $latest;
+            $fakten = en_wetter_fakten($pdo);
+            $datum  = $fakten['stand']['gestern'];
         } catch (Throwable) {
             // DB-Fehler: bei den neutralen Fakten bleiben, Template greift trotzdem.
         }
@@ -613,23 +765,24 @@ function en_wetter_lesen(?PDO $pdo = null, ?string $cachePath = null): array {
 }
 
 /**
- * en_wetter_regenerieren() — berechnet frische Fakten (verankert auf den
- * letzten Tag mit Verbrauch), lässt Haiku formulieren (Fallback: Template),
+ * en_wetter_regenerieren() — berechnet frische Fakten (verankert auf $now−1
+ * Tag, s. en_wetter_fakten()), lässt Haiku formulieren (Fallback: Template),
  * und schreibt das Ergebnis atomar in den Cache. Läuft OFF-PATH (Import-Hook
  * oder `wetter-refresh`-Route), nie synchron beim Dashboard-Seitenaufbau.
  *
- * Budget (TASK-6): höchstens 2 Haiku-Aufrufe/Tag, an der 14:00-Grenze (s.
+ * Budget (Spec §4): höchstens 2 Haiku-Aufrufe/Tag, an der 14:00-Grenze (s.
  * en_wetter_slot()). Vor 14:00 kein Vorschau-Profil (Morgen-Preise fehlen
  * meist); ab 14:00 Vorschau auf morgen, WENN für morgen bereits Readings
- * (Spotpreise) vorliegen — sonst Fallback auf das heutige Profil (Dev-Daten
- * ohne Zukunftspreise). In-Flight-Guard: liegt bereits ein Cache-Eintrag für
- * denselben Slot vor (z. B. zwei fast gleichzeitige Loads), wird der
- * bestehende Cache unverändert zurückgegeben — kein zweiter Haiku-Call.
+ * (Spotpreise) vorliegen — sonst kein Morgen-Profil. In-Flight-Guard: liegt
+ * bereits ein Cache-Eintrag für denselben Slot vor (z. B. zwei fast
+ * gleichzeitige Loads), wird der bestehende Cache unverändert zurückgegeben
+ * — kein zweiter Haiku-Call.
  *
  * $cachePath/$now sind für Tests injizierbar (Default: echter Cache-Pfad
  * bzw. echte Uhrzeit).
  *
- * @return array{datum: string, slot: string, fakten: array, text: string, quelle: string, erzeugt_at: string}
+ * @return array{datum: string, slot: string, stand: array, symbol: string,
+ *               fakten: array, text: string, quelle: string, erzeugt_at: string}
  */
 function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null, ?DateTimeImmutable $now = null): array {
     $path = $cachePath ?? en_wetter_cache_pfad();
@@ -644,27 +797,29 @@ function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null,
         return $vorhanden;
     }
 
-    $latest = en_wetter_latest_tag($pdo) ?? date('Y-m-d');
-
-    $profilTag = $latest;
-    $vorschau  = false;
+    // Morgen-Vorschau nur im #nach-Slot UND wenn für morgen bereits
+    // Spotpreise (Readings) vorliegen — sonst bleibt profilMorgen null
+    // (kein Morgen-Profil, keine Vorschau).
+    $profilMorgen = null;
     if (str_ends_with($slot, '#nach')) {
-        $morgen = date('Y-m-d', strtotime($latest . ' +1 day'));
+        $morgen = $now->modify('+1 day')->format('Y-m-d');
         if (en_wetter_hat_readings($pdo, $morgen)) {
-            $profilTag = $morgen;
-            $vorschau  = true;
+            $profilMorgen = $morgen;
         }
     }
 
-    $fakten = en_wetter_fakten($pdo, $latest, $profilTag, $vorschau);
+    $fakten = en_wetter_fakten($pdo, $now, $profilMorgen);
 
     $haikuText = en_haiku_wetter($fakten, $cfg);
     $text      = $haikuText ?? en_wetter_template($fakten);
     $quelle    = $haikuText !== null ? 'haiku' : 'template';
 
     $cache = [
-        'datum'      => $latest,
+        'datum'      => $fakten['stand']['gestern'],
         'slot'       => $slot,
+        // fürs UI ohne Neurechnung (Spec §4) — zusätzlich zu 'fakten' selbst.
+        'stand'      => $fakten['stand'],
+        'symbol'     => $fakten['preis']['symbol'],
         'fakten'     => $fakten,
         'text'       => $text,
         'quelle'     => $quelle,
