@@ -71,7 +71,7 @@ define('TARIFF_COLS', "t.provider_surcharge_ct, t.electricity_tax_ct, t.renewabl
 // JSON-Härtung für die Import-Routen: PHP-Warnings/-Fatals dürfen nie einen
 // kaputten/leeren Body erzeugen — sie werden hier in valides Fehler-JSON
 // übersetzt (§ „nie bloß Netzwerkfehler").
-$importTypes = ['preview-import', 'import-candidates', 'import-chunk', 'import-finalize'];
+$importTypes = ['preview-import', 'import-candidates', 'import-chunk', 'import-finalize', 'import-discard'];
 if (in_array($type, $importTypes, true)) {
     set_error_handler(function ($no, $str) {
         throw new ErrorException($str, 0, $no);
@@ -503,6 +503,53 @@ if ($type === 'daily') {
             appendLog($con, 'wetter', 'Wetterbericht-Regeneration nach Import FAILED: ' . $e->getMessage());
         }
         api_json_send(['ok' => true, 'days' => $r['days'], 'archived' => $r['archived'], 'recomputed' => $r['recomputed']]);
+    } catch (Throwable $e) {
+        api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
+    }
+
+} elseif ($type === 'import-discard') {
+    if (($_SESSION['rights'] ?? '') !== 'Admin') {
+        api_json_send(['ok' => false, 'error' => 'forbidden'], 403);
+    }
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        api_json_send(['ok' => false, 'error' => 'method_not_allowed'], 405);
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
+    }
+    try {
+        $root    = realpath(dirname(__DIR__));
+        $scrapes = $root . '/scrapes';
+        $reject  = $root . '/_Abgelehnt';
+        $name    = basename((string) ($_POST['file'] ?? ''));
+        $path    = $scrapes . '/' . $name;
+        if ($name === '' || !is_file($path)) {
+            api_json_send(['ok' => false, 'error' => 'file_not_found'], 404);
+        }
+        // Sicherheitsgurt: nur als untauglich bewertete CSVs dürfen aus der Lane.
+        $fmt = energie_csv_format_pruefen($path);
+        if (!empty($fmt['ok'])) {
+            api_json_send(['ok' => false, 'error' => 'file_ok_not_discardable'], 409);
+        }
+        if (!is_dir($reject)) mkdir($reject, 0755, true);
+        // Namenskollision im Zielordner auflösen: „name (2).csv“, „name (3).csv“, …
+        $dest = $reject . '/' . $name;
+        if (file_exists($dest)) {
+            $ext  = pathinfo($name, PATHINFO_EXTENSION);
+            $base = $ext !== '' ? substr($name, 0, -strlen($ext) - 1) : $name;
+            $n = 2;
+            do {
+                $cand = $base . ' (' . $n . ')' . ($ext !== '' ? '.' . $ext : '');
+                $dest = $reject . '/' . $cand;
+                $n++;
+            } while (file_exists($dest));
+        }
+        if (!rename($path, $dest)) {
+            api_json_send(['ok' => false, 'error' => 'move_failed'], 500);
+        }
+        appendLog($con, 'import', 'Abgelehnte Datei aus Lane entfernt: ' . $name
+            . ' → _Abgelehnt/ (' . (string) ($fmt['problem'] ?? 'Format ungültig') . ')');
+        api_json_send(['ok' => true, 'moved' => basename($dest)]);
     } catch (Throwable $e) {
         api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
