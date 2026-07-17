@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/../inc/layout.php';
 require_once __DIR__ . '/../inc/insight.php';
+require_once __DIR__ . '/../inc/wetter.php';
 auth_require();
 
 // Most recent day with actual consumption data
@@ -69,6 +70,7 @@ $monthPrev = $normPrev($stmt->fetch());
 function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' <span class="unit">kWh</span>'; }
 function fmt_eur($v) { return '<span class="unit">€</span> ' . number_format($v, 2, ',', '.'); }
 function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' <span class="unit">ct/kWh</span>'; }
+function fmt_ct_plain($v) { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 function kpi_eff($eur, $kwh) { return $kwh != 0.0 ? $eur / $kwh * 100 : 0.0; }
 
 /** Delta-Chip-Markup (▲/▼/·). $sem=false → immer neutral eingefärbt (nur Richtung/Wert). */
@@ -89,21 +91,96 @@ $monthSpark = en_sparkline_svg(en_effektiv_serie($pdo, $monthSparkFrom, $latest)
 // Preis-Hero: Zusammensetzung ct/kWh der letzten 30 Tage (Börse -> Rechnung).
 $komp = en_preis_komposition($pdo, date('Y-m-d', strtotime('-29 days')), date('Y-m-d'));
 $komp_pct = static fn(float $v): float => $komp['brutto'] > 0 ? $v / $komp['brutto'] * 100 : 0.0;
+
+// ── Wetterbericht (Dashboard-Karte, Spec §4) ────────────────────────────────
+// Liest NUR den Cache (nie Haiku synchron beim Seitenaufbau, §20); die eigentliche
+// Regeneration läuft off-path über inc/wetter.php::en_wetter_regenerieren()
+// (Import-Hook + api.php?type=wetter-refresh).
+$w  = en_wetter_lesen($pdo);
+$wf = $w['fakten'];
+
+/**
+ * Wetterglyph je Lage: heute-Ø < 30-T-Ø (= Lastdisziplin-Referenz "einfach") →
+ * Sonne; heute-Ø > 1,25×Ø oder heutige Spitzenstunden → Wolke; heute-Max > 2×Ø →
+ * Gewitter (Spec §4). Fehlende Referenzwerte → neutral (Sonne).
+ */
+function en_wetter_glyph(array $fakten): string {
+    $ref = $fakten['disziplin']['einfach'] ?? null;
+    $avg = $fakten['heute']['avg'] ?? null;
+    if ($ref === null || $ref <= 0.0 || $avg === null) return 'sun';
+
+    $max     = $fakten['heute']['max'] ?? null;
+    $spitzen = $fakten['heute']['spitzen'] ?? [];
+
+    if ($max !== null && $max > 2.0 * $ref) return 'cloud-lightning';
+    if ($avg > 1.25 * $ref || $spitzen)      return 'cloud';
+    return 'sun';
+}
+$wetterGlyph = en_wetter_glyph($wf);
+
+/** Fakten-Chip: Label + entweder ein Delta (reuses en_chip()) oder Klartext, klickbar. */
+function en_wetter_chip(string $label, string $href, ?array $delta = null, string $klartext = ''): string {
+    $body = htmlspecialchars($label);
+    if ($delta !== null && $delta['pct'] !== null) {
+        $body .= ' ' . en_chip($delta);
+    } elseif ($klartext !== '') {
+        $body .= ' · ' . htmlspecialchars($klartext);
+    }
+    return '<a class="wetter-chip" href="' . htmlspecialchars($href) . '">' . $body . '</a>';
+}
+
+$wetterMonthlyHref = $base . '/monthly.php?year=' . $prev_year . '&month=' . $prev_month;
+$wetterDailyHref   = $base . '/daily.php?date=' . htmlspecialchars($w['datum']);
+
+$wetterChips = [];
+
+$vDelta = $wf['verbrauch']['delta_pct'] ?? null;
+if ($vDelta !== null) {
+    $vDir = abs($vDelta) < 0.005 ? 'flat' : ($vDelta > 0 ? 'up' : 'down');
+    $wetterChips[] = en_wetter_chip('Verbrauch', $wetterMonthlyHref, ['pct' => $vDelta * 100, 'dir' => $vDir]);
+}
+
+$dGap = $wf['disziplin']['gap_pct'] ?? null;
+if ($dGap !== null) {
+    $dBew   = $wf['disziplin']['bewertung'];
+    $dDir   = $dBew === 'gut' ? 'down' : ($dBew === 'unguenstig' ? 'up' : 'flat');
+    $dLabel = 'Lastdisziplin ' . ($dBew === 'unguenstig' ? 'ungünstig' : $dBew);
+    $wetterChips[] = en_wetter_chip($dLabel, $wetterMonthlyHref, ['pct' => $dGap * 100, 'dir' => $dDir]);
+}
+
+$hAvg = $wf['heute']['avg'] ?? null;
+if ($hAvg !== null) {
+    $wetterChips[] = en_wetter_chip('heute Ø', $wetterDailyHref, null, number_format($hAvg, 1, ',', '.') . ' ct');
+}
+
+$hMax = $wf['heute']['max'] ?? null;
+$hMaxH = $wf['heute']['max_h'] ?? null;
+if ($hMax !== null && $hMaxH !== null) {
+    $wetterChips[] = en_wetter_chip('Spitze ' . $hMaxH . ' h', $wetterDailyHref, null, number_format($hMax, 1, ',', '.') . ' ct');
+}
+
+$gVon = $wf['heute']['guenstig_von'] ?? null;
+$gBis = $wf['heute']['guenstig_bis'] ?? null;
+$gAvg = $wf['heute']['guenstig_avg'] ?? null;
+if ($gVon !== null && $gBis !== null && $gAvg !== null) {
+    $wetterChips[] = en_wetter_chip('günstig ' . $gVon . '–' . $gBis . ' h', $wetterDailyHref, null, number_format($gAvg, 1, ',', '.') . ' ct');
+}
 ?>
 <?php render_page_head('Energie'); render_header('index'); ?>
 <main id="main-content" tabindex="-1">
 
     <section class="preis-hero" aria-label="Preiszusammensetzung">
-        <h2 class="preis-hero-title">Dein Strompreis je kWh — von der Börse bis zur Rechnung</h2>
+        <h2 class="preis-hero-title">Dein Strompreis je kWh · letzte 30 Tage</h2>
         <div class="preis-bar-track">
             <div class="preis-bar">
-                <div class="seg-spot"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%"></div>
-                <div class="seg-aufschlag" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['aufschlag'])) ?>%"></div>
-                <div class="seg-abgaben"   style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['abgaben'])) ?>%"></div>
-                <div class="seg-gba"       style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['gba'])) ?>%"></div>
-                <div class="seg-mwst"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['mwst'])) ?>%"></div>
-                <div class="seg-fixkosten" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['fixkosten'])) ?>%"></div>
+                <div class="seg-spot"      data-label="Börse"           data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['spot'])) ?>"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%"></div>
+                <div class="seg-aufschlag" data-label="Aufschlag"       data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['aufschlag'])) ?>" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['aufschlag'])) ?>%"></div>
+                <div class="seg-abgaben"   data-label="Abgaben"         data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['abgaben'])) ?>"   style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['abgaben'])) ?>%"></div>
+                <div class="seg-gba"       data-label="Gebrauchsabgabe" data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['gba'])) ?>"       style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['gba'])) ?>%"></div>
+                <div class="seg-mwst"      data-label="MwSt"            data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['mwst'])) ?>"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['mwst'])) ?>%"></div>
+                <div class="seg-fixkosten" data-label="Fixkosten"       data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['fixkosten'])) ?>" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['fixkosten'])) ?>%"></div>
             </div>
+            <div class="seg-tooltip" id="seg-tooltip" role="tooltip" hidden></div>
             <div class="preis-ticks">
                 <div class="preis-tick" style="left:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%">
                     <span class="tick-mark">▲</span>
@@ -122,15 +199,75 @@ $komp_pct = static fn(float $v): float => $komp['brutto'] > 0 ? $v / $komp['brut
                 </div>
             </div>
         </div>
-        <ul class="preis-legende">
-            <li><span class="legende-dot seg-spot"></span> Börse <?= fmt_ct($komp['spot']) ?></li>
-            <li><span class="legende-dot seg-aufschlag"></span> Aufschlag <?= fmt_ct($komp['aufschlag']) ?></li>
-            <li><span class="legende-dot seg-abgaben"></span> Abgaben <?= fmt_ct($komp['abgaben']) ?></li>
-            <li><span class="legende-dot seg-gba"></span> Gebrauchsabgabe <?= fmt_ct($komp['gba']) ?></li>
-            <li><span class="legende-dot seg-mwst"></span> MwSt <?= fmt_ct($komp['mwst']) ?></li>
-            <li><span class="legende-dot seg-fixkosten"></span> Fixkosten <?= fmt_ct($komp['fixkosten']) ?></li>
-        </ul>
     </section>
+    <script nonce="<?= $_cspNonce ?>">
+    (function() {
+        var track = document.querySelector('.preis-bar-track');
+        var tip   = document.getElementById('seg-tooltip');
+        if (!track || !tip) return;
+        var open = null;
+
+        function close() { tip.hidden = true; open = null; }
+
+        function show(seg) {
+            tip.innerHTML = '<span class="seg-tooltip-label"></span><span class="seg-tooltip-value"></span>';
+            tip.querySelector('.seg-tooltip-label').textContent = seg.getAttribute('data-label') || '';
+            tip.querySelector('.seg-tooltip-value').textContent = seg.getAttribute('data-ct') || '';
+            tip.hidden = false;
+            var trackRect = track.getBoundingClientRect();
+            var segRect   = seg.getBoundingClientRect();
+            tip.style.left      = (segRect.left - trackRect.left + segRect.width / 2) + 'px';
+            tip.style.top       = (segRect.bottom - trackRect.top + 8) + 'px';
+            tip.style.transform = 'translateX(-50%)';
+            open = seg;
+        }
+
+        track.querySelectorAll('[data-label]').forEach(function(seg) {
+            seg.addEventListener('pointerdown', function(e) {
+                e.stopPropagation();
+                if (open === seg) { close(); return; }
+                show(seg);
+            });
+        });
+
+        // Rule §8: outside-close on pointerdown (capture), never click — excludes
+        // interactions whose target lies within the track itself.
+        document.addEventListener('pointerdown', function(e) {
+            if (open && !track.contains(e.target)) close();
+        }, true);
+    })();
+    </script>
+
+    <section class="wetterbericht" aria-label="Wetterbericht">
+        <span class="ui-icon ui-icon-<?= htmlspecialchars($wetterGlyph) ?> wetterbericht-glyph" aria-hidden="true"></span>
+        <div class="wetterbericht-body">
+            <p class="wetterbericht-text"><?= htmlspecialchars($w['text']) ?></p>
+            <?php if ($wetterChips): ?>
+            <ul class="wetter-chips">
+                <?php foreach ($wetterChips as $wetterChip): ?>
+                <li><?= $wetterChip ?></li>
+                <?php endforeach; ?>
+            </ul>
+            <?php endif; ?>
+            <div class="wetterbericht-meta">
+                aktualisiert <?= htmlspecialchars((new DateTime($w['erzeugt_at']))->format('H:i')) ?> · <?= htmlspecialchars($w['quelle']) ?>
+            </div>
+        </div>
+    </section>
+    <?php if ($w['datum'] !== date('Y-m-d')): ?>
+    <script nonce="<?= $_cspNonce ?>">
+    (function() {
+        // Cache ist von einem älteren Tag: einmal Off-Path-Regeneration anstoßen
+        // (§20 — kein await, blockiert die UI nicht; Ergebnis egal, nächster Load
+        // zeigt den frischen Bericht).
+        fetch(<?= json_encode($base) ?> + '/api.php?type=wetter-refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'csrf_token=' + encodeURIComponent(<?= json_encode(csrf_token()) ?>)
+        }).catch(function() {});
+    })();
+    </script>
+    <?php endif; ?>
 
     <div class="tiles">
 
