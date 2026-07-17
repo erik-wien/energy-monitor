@@ -346,7 +346,7 @@ function render_header(string $page_type): void
                             ' Datei(en) sehen anders aus als erwartet:<ul>' +
                             bad.map(f => '<li>' + escapeHtml(f.name) + ': ' + escapeHtml(f.problem || 'unbekannt') +
                                 ' <button type="button" class="btn btn-sm btn-outline-danger" data-discard="' +
-                                escapeHtml(f.name) + '">Aus Import entfernen</button></li>').join('') +
+                                escapeHtml(f.name).replace(/"/g, '&quot;') + '">Aus Import entfernen</button></li>').join('') +
                             '</ul>';
                         impConfirm.disabled = true;
                     } else {
@@ -386,8 +386,11 @@ function render_header(string $page_type): void
                 btn.disabled = false;
                 btn.textContent = 'Aus Import entfernen';
                 const fehler = _httpFehler(err).error || 'Entfernen fehlgeschlagen.';
+                // Vorherige Discard-Fehlermeldung ersetzen (nicht stapeln).
+                const alt = impFormatWarn.querySelector('#imp-discard-fehler');
+                if (alt) alt.remove();
                 impFormatWarn.insertAdjacentHTML('beforeend',
-                    '<p role="alert" style="margin:.5rem 0 0">' + escapeHtml(fehler) + '</p>');
+                    '<p id="imp-discard-fehler" role="alert" style="margin:.5rem 0 0">' + escapeHtml(fehler) + '</p>');
             }
         });
 
