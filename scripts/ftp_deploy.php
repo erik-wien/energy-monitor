@@ -98,7 +98,7 @@ register_shutdown_function(function () use ($root, $composerBin) {
 
 $excludeDirs = [
     // project dirs not needed on server (matched at any depth by basename)
-    '.git', '.claude', 'tests', '_Archiv', 'Archiv', 'docs', 'deploy',
+    '.git', '.claude', 'tests', '_Archiv', '_Abgelehnt', 'Archiv', 'docs', 'deploy',
     'config', 'data', 'logs', 'scrapes', 'backups', '.worktrees', 'worktrees',
     '__pycache__', 'node_modules', 'scripts',
     // dev-only vendor packages (mirrors wlmonitor)

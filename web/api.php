@@ -547,8 +547,12 @@ if ($type === 'daily') {
         if (!rename($path, $dest)) {
             api_json_send(['ok' => false, 'error' => 'move_failed'], 500);
         }
-        appendLog($con, 'import', 'Abgelehnte Datei aus Lane entfernt: ' . $name
-            . ' → _Abgelehnt/ (' . (string) ($fmt['problem'] ?? 'Format ungültig') . ')');
+        // Move ist geschehen — ein Logging-Fehler darf den Erfolg nicht als 500
+        // maskieren (sonst zeigt der Retry irreführend file_not_found).
+        try {
+            appendLog($con, 'import', 'Abgelehnte Datei aus Lane entfernt: ' . $name
+                . ' → _Abgelehnt/ (' . (string) ($fmt['problem'] ?? 'Format ungültig') . ')');
+        } catch (Throwable) { /* Move steht; Log ist best-effort */ }
         api_json_send(['ok' => true, 'moved' => basename($dest)]);
     } catch (Throwable $e) {
         api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);

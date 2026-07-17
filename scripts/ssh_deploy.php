@@ -123,6 +123,7 @@ $rsyncExcludes = [
     'docs/',
     'deploy/',
     '_Archiv/',
+    '_Abgelehnt/',
     'Archiv/',
     'scripts/',
     'config/',

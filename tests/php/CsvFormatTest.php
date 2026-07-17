@@ -68,4 +68,15 @@ final class CsvFormatTest extends TestCase
         $this->assertStringContainsString('Tageswerte', $f['problem']);
         $this->assertStringContainsString('Viertelstundenwerte', $f['problem']);
     }
+
+    public function test_zeit_von_fehlt_ohne_verbrauchsspalte_kein_tageswerte_hinweis(): void {
+        // „Zeit von" fehlt UND keine Verbrauchsspalte → das ist KEIN Tageswerte-
+        // Export; der Zusatz darf hier nicht anhängen (nur Datum+Verbrauch-da-Fall).
+        $p = $this->tmp("Datum;Foo;Bar\n01.06.2026;a;b\n");
+        $r = energie_csv_format_pruefen($p);
+        $this->assertFalse($r['ok']);
+        $this->assertStringContainsString('Zeit von', (string) $r['problem']);
+        $this->assertStringNotContainsString('Tageswerte', (string) $r['problem']);
+        unlink($p);
+    }
 }
