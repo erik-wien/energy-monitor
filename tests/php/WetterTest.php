@@ -174,6 +174,9 @@ final class WetterTest extends TestCase {
         $result = en_wetter_lesen($this->pdo, $path);
 
         $this->assertSame('template', $result['quelle']);
+        // Kein echter Cache -> Slot bewusst '' (weicht von jedem echten Slot ab,
+        // damit der Aufrufer einmalig eine Off-Path-Regeneration anstößt).
+        $this->assertSame('', $result['slot']);
         $this->assertArrayHasKey('verbrauch', $result['fakten']);
         $this->assertArrayHasKey('disziplin', $result['fakten']);
         $this->assertArrayHasKey('heute', $result['fakten']);
@@ -187,6 +190,7 @@ final class WetterTest extends TestCase {
         mkdir(dirname($path), 0755, true);
         $vorhanden = [
             'datum'      => '2026-07-16',
+            'slot'       => '2026-07-16#nach',
             'fakten'     => ['verbrauch' => ['ist_kwh' => 1.0, 'basis_kwh' => 2.0, 'delta_pct' => -0.5]],
             'text'       => 'Gestriger Bericht.',
             'quelle'     => 'haiku',
@@ -207,7 +211,8 @@ final class WetterTest extends TestCase {
         $this->seedHourReading('2026-07-01', 12, 10.0);
 
         // Leere ai-Config → en_haiku_wetter liefert sofort null → Template-Fallback.
-        $result = en_wetter_regenerieren($this->pdo, [], $path);
+        $now    = new DateTimeImmutable('2026-07-01 09:00:00');
+        $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
 
         $this->assertFileExists($path);
         $onDisk = json_decode(file_get_contents($path), true);
@@ -216,6 +221,7 @@ final class WetterTest extends TestCase {
         $this->assertNotSame('', $onDisk['text']);
         $this->assertArrayHasKey('disziplin', $onDisk['fakten']);
         $this->assertSame('2026-07-01', $onDisk['datum']);
+        $this->assertSame('2026-07-01#vor', $onDisk['slot']);
 
         // Atomarer Write (tmp-Datei + rename): keine liegen gebliebene tmp-Datei.
         $this->assertSame([], glob(dirname($path) . '/*.tmp*') ?: []);
@@ -230,6 +236,84 @@ final class WetterTest extends TestCase {
         $this->assertSame('template', $result['quelle']);
         $this->assertNotSame('', $result['text']);
         $this->assertNull($result['fakten']['disziplin']['gap_pct']);
+    }
+
+    // ── en_wetter_slot / Budget (TASK-6: max. 2 Haiku-Aufrufe/Tag) ───────────
+
+    public function test_slot_vor_14_uhr(): void {
+        $this->assertSame('2026-07-17#vor', en_wetter_slot(new DateTimeImmutable('2026-07-17 00:00:00')));
+        $this->assertSame('2026-07-17#vor', en_wetter_slot(new DateTimeImmutable('2026-07-17 13:59:59')));
+    }
+
+    public function test_slot_ab_14_uhr(): void {
+        $this->assertSame('2026-07-17#nach', en_wetter_slot(new DateTimeImmutable('2026-07-17 14:00:00')));
+        $this->assertSame('2026-07-17#nach', en_wetter_slot(new DateTimeImmutable('2026-07-17 23:59:59')));
+    }
+
+    public function test_regenerieren_inflight_guard_gleicher_slot_ueberspringt(): void {
+        // Simuliert zwei fast gleichzeitige Loads: der Cache trägt bereits den
+        // aktuellen Slot -> en_wetter_regenerieren MUSS ihn unverändert
+        // zurückgeben (kein zweiter Haiku-Call), obwohl frische DB-Daten da
+        // sind, die eine andere Berechnung liefern würden.
+        $path = $this->tmpCachePfad();
+        mkdir(dirname($path), 0755, true);
+        $now  = new DateTimeImmutable('2026-07-17 10:00:00');
+        $slot = en_wetter_slot($now);
+        $bereitsFrisch = [
+            'datum'      => '2026-07-17',
+            'slot'       => $slot,
+            'fakten'     => ['irrelevant' => true],
+            'text'       => 'Bereits frisch von einem parallelen Request.',
+            'quelle'     => 'template',
+            'erzeugt_at' => '2026-07-17T09:30:00+00:00',
+        ];
+        file_put_contents($path, json_encode($bereitsFrisch, JSON_UNESCAPED_UNICODE));
+
+        $this->seedTag('2026-07-01', 10.0, 12.0); // würde bei echter Neuberechnung andere Fakten liefern
+
+        $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
+
+        $this->assertEquals($bereitsFrisch, $result);
+    }
+
+    public function test_regenerieren_vor_14_kein_vorschau_auch_wenn_morgen_preise_da(): void {
+        $path = $this->tmpCachePfad();
+        $this->seedTag('2026-07-17', 10.0, 12.0);
+        $this->seedHourReading('2026-07-18', 12, 15.0); // Morgen-Preise liegen vor
+        $now = new DateTimeImmutable('2026-07-17 09:00:00'); // #vor
+
+        $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
+
+        $this->assertSame('2026-07-17#vor', $result['slot']);
+        $this->assertFalse($result['fakten']['vorschau']);
+        $this->assertSame('2026-07-17', $result['fakten']['heute']['datum']);
+    }
+
+    public function test_regenerieren_nach_14_mit_morgen_preisen_vorschau(): void {
+        $path = $this->tmpCachePfad();
+        $this->seedTag('2026-07-17', 10.0, 12.0);
+        $this->seedHourReading('2026-07-18', 12, 15.0); // Morgen-Preise liegen vor
+        $now = new DateTimeImmutable('2026-07-17 15:00:00'); // #nach
+
+        $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
+
+        $this->assertSame('2026-07-17#nach', $result['slot']);
+        $this->assertTrue($result['fakten']['vorschau']);
+        $this->assertSame('2026-07-18', $result['fakten']['heute']['datum']);
+        $this->assertStringContainsString('Vorschau auf morgen', $result['text']);
+    }
+
+    public function test_regenerieren_nach_14_ohne_morgen_preise_fallback_heute(): void {
+        $path = $this->tmpCachePfad();
+        $this->seedTag('2026-07-17', 10.0, 12.0);
+        $this->seedHourReading('2026-07-17', 12, 10.0); // nur heutige Preise, keine für morgen
+        $now = new DateTimeImmutable('2026-07-17 15:00:00'); // #nach
+
+        $result = en_wetter_regenerieren($this->pdo, [], $path, $now);
+
+        $this->assertFalse($result['fakten']['vorschau']);
+        $this->assertSame('2026-07-17', $result['fakten']['heute']['datum']);
+        $this->assertStringNotContainsString('Vorschau auf morgen', $result['text']);
     }
 
     // ── en_wetter_template (reine Funktion, keine DB) ────────────────────────
@@ -274,6 +358,40 @@ final class WetterTest extends TestCase {
 
         $this->assertIsString($text);
         $this->assertNotSame('', $text);
+    }
+
+    public function test_template_vorschau_auf_morgen(): void {
+        $fakten = [
+            'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
+            'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
+            'heute'     => [
+                'datum' => '2026-07-18', 'avg' => 14.5, 'max' => 18.0, 'max_h' => 19,
+                'min' => 9.8, 'min_h' => 13, 'spitzen' => [],
+                'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+            ],
+            'vorschau'  => true,
+        ];
+
+        $text = en_wetter_template($fakten);
+
+        $this->assertStringContainsString('Vorschau auf morgen', $text);
+    }
+
+    public function test_template_ohne_vorschau_flag_heute_wortlaut(): void {
+        $fakten = [
+            'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
+            'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
+            'heute'     => [
+                'datum' => '2026-07-17', 'avg' => 14.5, 'max' => null, 'max_h' => null,
+                'min' => null, 'min_h' => null, 'spitzen' => [],
+                'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+            ],
+        ];
+
+        $text = en_wetter_template($fakten);
+
+        $this->assertStringContainsString('Heute liegt der Strompreis', $text);
+        $this->assertStringNotContainsString('Vorschau auf morgen', $text);
     }
 
     // ── DB-Scaffolding (Muster wie InsightTest/CsvImporterTest) ─────────────

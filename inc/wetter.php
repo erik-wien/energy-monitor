@@ -14,21 +14,26 @@ require_once __DIR__ . '/ai_client.php';
 
 /**
  * en_wetter_fakten() — bündelt die drei Fakten-Blöcke für den Wetterbericht,
- * verankert auf den Tag $latest (Format 'Y-m-d').
+ * verankert auf den Tag $latest (Format 'Y-m-d'). Das „heute"-Preisprofil kann
+ * per $profilTag auf einen anderen Tag verschoben werden (Morgen-Vorschau im
+ * #nach-Slot, s. en_wetter_regenerieren()); $vorschau markiert das für
+ * en_wetter_template() ("Vorschau auf morgen" statt "Heute").
  *
  * @return array{
  *   verbrauch: array{ist_kwh: float, basis_kwh: float, delta_pct: ?float},
  *   disziplin: array{gew: ?float, einfach: ?float, gap_pct: ?float, bewertung: string},
  *   heute: array{datum: string, avg: ?float, max: ?float, max_h: ?int, min: ?float,
  *                min_h: ?int, spitzen: int[], guenstig_von: ?int, guenstig_bis: ?int,
- *                guenstig_avg: ?float}
+ *                guenstig_avg: ?float},
+ *   vorschau: bool
  * }
  */
-function en_wetter_fakten(PDO $pdo, string $latest): array {
+function en_wetter_fakten(PDO $pdo, string $latest, ?string $profilTag = null, bool $vorschau = false): array {
     return [
         'verbrauch' => en_wetter_verbrauch($pdo, $latest),
         'disziplin' => en_wetter_disziplin($pdo, $latest),
-        'heute'     => en_wetter_heute($pdo, $latest),
+        'heute'     => en_wetter_heute($pdo, $profilTag ?? $latest),
+        'vorschau'  => $vorschau,
     ];
 }
 
@@ -162,6 +167,13 @@ function en_wetter_heute(PDO $pdo, string $latest): array {
     return $result;
 }
 
+/** Gibt es mind. eine `readings`-Zeile am Tag $tag? (Prüft, ob Spotpreise für morgen schon da sind.) */
+function en_wetter_hat_readings(PDO $pdo, string $tag): bool {
+    $stmt = $pdo->prepare("SELECT 1 FROM readings WHERE DATE(ts) = ? LIMIT 1");
+    $stmt->execute([$tag]);
+    return $stmt->fetchColumn() !== false;
+}
+
 /**
  * en_wetter_template() — deterministischer 2–4-Satz-Bericht aus Satzbausteinen
  * (Fallback ohne KI, s. Spec §1). Null-Felder werden übersprungen; völlig leere
@@ -195,12 +207,14 @@ function en_wetter_template(array $fakten): string {
     $maxH = $fakten['heute']['max_h'] ?? null;
     $max  = $fakten['heute']['max']   ?? null;
     if ($avg !== null) {
-        $avgTxt = number_format($avg, 1, ',', '.');
+        $vorschau = $fakten['vorschau'] ?? false;
+        $lead     = $vorschau ? 'Vorschau auf morgen: der Strompreis liegt' : 'Heute liegt der Strompreis';
+        $avgTxt   = number_format($avg, 1, ',', '.');
         if ($max !== null && $maxH !== null) {
             $maxTxt = number_format($max, 1, ',', '.');
-            $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh, mit einer Spitze um {$maxH} Uhr ({$maxTxt} ct/kWh).";
+            $saetze[] = "{$lead} im Schnitt bei {$avgTxt} ct/kWh, mit einer Spitze um {$maxH} Uhr ({$maxTxt} ct/kWh).";
         } else {
-            $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh.";
+            $saetze[] = "{$lead} im Schnitt bei {$avgTxt} ct/kWh.";
         }
     }
 
@@ -236,7 +250,18 @@ function en_wetter_fakten_leer(): array {
             'min' => null, 'min_h' => null, 'spitzen' => [],
             'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
         ],
+        'vorschau'  => false,
     ];
+}
+
+/**
+ * en_wetter_slot() — Budget-Slot-Kennung für die Zweimal-täglich-Grenze (14:00
+ * lokal, s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md /
+ * TASK-6): 'Y-m-d#vor' vor 14:00, 'Y-m-d#nach' ab 14:00. $now ist injizierbar
+ * (Tests); Produktiv-Aufrufer übergeben `new DateTimeImmutable()`.
+ */
+function en_wetter_slot(DateTimeImmutable $now): string {
+    return $now->format('Y-m-d') . ((int) $now->format('H') < 14 ? '#vor' : '#nach');
 }
 
 /** Letzter Tag mit tatsächlichem Verbrauch (Muster wie web/index.php). */
@@ -256,6 +281,9 @@ function en_wetter_cache_lesen(string $path): ?array {
 
     return [
         'datum'      => (string) $data['datum'],
+        // 'slot' fehlt in Alt-Caches (vor TASK-6) — '' weicht garantiert von
+        // jedem echten Slot ab, löst also einmalig eine Regeneration aus.
+        'slot'       => isset($data['slot']) ? (string) $data['slot'] : '',
         'fakten'     => (array) $data['fakten'],
         'text'       => (string) $data['text'],
         'quelle'     => (string) $data['quelle'],
@@ -308,6 +336,10 @@ function en_wetter_lesen(?PDO $pdo = null, ?string $cachePath = null): array {
 
     return [
         'datum'      => $datum,
+        // Kein echter Cache da -> Slot bewusst '' (nie ein gültiger Slot),
+        // damit der Aufrufer (web/index.php) einmalig eine Off-Path-Regeneration
+        // anstößt statt den Template-Notanker dauerhaft zu servieren.
+        'slot'       => '',
         'fakten'     => $fakten,
         'text'       => en_wetter_template($fakten),
         'quelle'     => 'template',
@@ -321,15 +353,45 @@ function en_wetter_lesen(?PDO $pdo = null, ?string $cachePath = null): array {
  * und schreibt das Ergebnis atomar in den Cache. Läuft OFF-PATH (Import-Hook
  * oder `wetter-refresh`-Route), nie synchron beim Dashboard-Seitenaufbau.
  *
- * $cachePath ist für Tests injizierbar (Default: der echte Cache-Pfad).
+ * Budget (TASK-6): höchstens 2 Haiku-Aufrufe/Tag, an der 14:00-Grenze (s.
+ * en_wetter_slot()). Vor 14:00 kein Vorschau-Profil (Morgen-Preise fehlen
+ * meist); ab 14:00 Vorschau auf morgen, WENN für morgen bereits Readings
+ * (Spotpreise) vorliegen — sonst Fallback auf das heutige Profil (Dev-Daten
+ * ohne Zukunftspreise). In-Flight-Guard: liegt bereits ein Cache-Eintrag für
+ * denselben Slot vor (z. B. zwei fast gleichzeitige Loads), wird der
+ * bestehende Cache unverändert zurückgegeben — kein zweiter Haiku-Call.
  *
- * @return array{datum: string, fakten: array, text: string, quelle: string, erzeugt_at: string}
+ * $cachePath/$now sind für Tests injizierbar (Default: echter Cache-Pfad
+ * bzw. echte Uhrzeit).
+ *
+ * @return array{datum: string, slot: string, fakten: array, text: string, quelle: string, erzeugt_at: string}
  */
-function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null): array {
+function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null, ?DateTimeImmutable $now = null): array {
     $path = $cachePath ?? en_wetter_cache_pfad();
+    $now  ??= new DateTimeImmutable();
+    $slot = en_wetter_slot($now);
+
+    // In-Flight-Guard: jemand hat für diesen Slot gerade erst regeneriert
+    // (billiger optimistischer Check; das atomare Rename schützt ohnehin vor
+    // Korruption, hier geht es nur um doppelte Haiku-Bestellungen).
+    $vorhanden = en_wetter_cache_lesen($path);
+    if ($vorhanden !== null && $vorhanden['slot'] === $slot) {
+        return $vorhanden;
+    }
 
     $latest = en_wetter_latest_tag($pdo) ?? date('Y-m-d');
-    $fakten = en_wetter_fakten($pdo, $latest);
+
+    $profilTag = $latest;
+    $vorschau  = false;
+    if (str_ends_with($slot, '#nach')) {
+        $morgen = date('Y-m-d', strtotime($latest . ' +1 day'));
+        if (en_wetter_hat_readings($pdo, $morgen)) {
+            $profilTag = $morgen;
+            $vorschau  = true;
+        }
+    }
+
+    $fakten = en_wetter_fakten($pdo, $latest, $profilTag, $vorschau);
 
     $haikuText = en_haiku_wetter($fakten, $cfg);
     $text      = $haikuText ?? en_wetter_template($fakten);
@@ -337,6 +399,7 @@ function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null)
 
     $cache = [
         'datum'      => $latest,
+        'slot'       => $slot,
         'fakten'     => $fakten,
         'text'       => $text,
         'quelle'     => $quelle,

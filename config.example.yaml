@@ -36,3 +36,7 @@ hofer:
   meter_id: AT0010000000000000001000012891962
 wienenergie:
   meter_id: AT0010000000000000001000012891962
+ai:
+  url: ''
+  model: ''
+  api_key: ''

@@ -99,6 +99,12 @@ $komp_pct = static fn(float $v): float => $komp['brutto'] > 0 ? $v / $komp['brut
 $w  = en_wetter_lesen($pdo);
 $wf = $w['fakten'];
 
+// Budget-Gate (TASK-6, max. 2 Haiku-Bestellungen/Tag): Off-Path-Regeneration
+// nur anstoßen, wenn der Cache aus einem ANDEREN 14:00-Slot stammt als jetzt
+// (nicht mehr "Cache-Datum != heute" — die fakten-Tagesanker der Datenlage
+// ist nie "heute", das feuerte bislang bei praktisch jedem Seitenaufbau).
+$wetterBrauchtRefresh = ($w['slot'] ?? '') !== en_wetter_slot(new DateTimeImmutable());
+
 /**
  * Wetterglyph je Lage: heute-Ø < 30-T-Ø (= Lastdisziplin-Referenz "einfach") →
  * Sonne; heute-Ø > 1,25×Ø oder heutige Spitzenstunden → Wolke; heute-Max > 2×Ø →
@@ -254,12 +260,14 @@ if ($gVon !== null && $gBis !== null && $gAvg !== null) {
             </div>
         </div>
     </section>
-    <?php if ($w['datum'] !== date('Y-m-d')): ?>
+    <?php if ($wetterBrauchtRefresh): ?>
     <script nonce="<?= $_cspNonce ?>">
     (function() {
-        // Cache ist von einem älteren Tag: einmal Off-Path-Regeneration anstoßen
-        // (§20 — kein await, blockiert die UI nicht; Ergebnis egal, nächster Load
-        // zeigt den frischen Bericht).
+        // Cache stammt aus einem anderen 14:00-Slot als jetzt: einmal Off-Path-
+        // Regeneration anstoßen (§20 — kein await, blockiert die UI nicht;
+        // Ergebnis egal, nächster Load zeigt den frischen Bericht). Garantiert
+        // max. 2 Haiku-Bestellungen/Tag (TASK-6) — dazwischen liefert PHP oben
+        // bereits denselben Slot -> dieser Block wird gar nicht erst gerendert.
         fetch(<?= json_encode($base) ?> + '/api.php?type=wetter-refresh', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
