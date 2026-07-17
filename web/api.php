@@ -154,7 +154,7 @@ if ($type === 'daily') {
                     MIN(r.spot_ct) AS min_spot_ct, MAX(r.spot_ct) AS max_spot_ct,
                     SUM(r.spot_ct * r.consumed_kwh) / NULLIF(SUM(r.consumed_kwh), 0) AS epex_wgt
              FROM daily_summary ds
-             LEFT JOIN readings r ON DATE(r.ts) = ds.day
+             LEFT JOIN readings r ON r.ts >= ds.day AND r.ts < ds.day + INTERVAL 1 DAY
              WHERE YEAR(ds.day) = ? AND WEEK(ds.day, 3) = ?
              GROUP BY ds.day
          ) agg
@@ -234,7 +234,7 @@ if ($type === 'daily') {
                     MIN(r.spot_ct) AS min_spot_ct, MAX(r.spot_ct) AS max_spot_ct,
                     SUM(r.spot_ct * r.consumed_kwh) / NULLIF(SUM(r.consumed_kwh), 0) AS epex_wgt
              FROM daily_summary ds
-             LEFT JOIN readings r ON DATE(r.ts) = ds.day
+             LEFT JOIN readings r ON r.ts >= ds.day AND r.ts < ds.day + INTERVAL 1 DAY
              WHERE YEAR(ds.day) = ? AND MONTH(ds.day) = ?
              GROUP BY ds.day
          ) agg

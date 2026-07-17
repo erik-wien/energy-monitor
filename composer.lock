@@ -170,11 +170,11 @@
         },
         {
             "name": "erikr/auth",
-            "version": "dev-feature/email-templates",
+            "version": "dev-main",
             "dist": {
                 "type": "path",
                 "url": "../auth",
-                "reference": "4c8244c76454fe7c42140bf838b68c8473569524"
+                "reference": "2f9a27b7acd8241d42e45ed841f7b0e089bd669c"
             },
             "require": {
                 "chillerlan/php-qrcode": "^5.0",
@@ -194,10 +194,13 @@
                     "src/mail_template.php",
                     "src/mail_helpers.php",
                     "src/invite.php",
+                    "src/tokens.php",
                     "src/admin.php",
                     "src/totp.php",
                     "src/avatar.php",
                     "src/remember.php",
+                    "src/apitoken.php",
+                    "src/sso.php",
                     "src/bootstrap.php"
                 ]
             },
@@ -217,7 +220,7 @@
             "dist": {
                 "type": "path",
                 "url": "../chrome",
-                "reference": "7eec883ac2885088917e38cb33a4771e5904a632"
+                "reference": "8118e543ab7fd7caef275b3d8ad77ea3e4def5b9"
             },
             "require": {
                 "erikr/auth": "*",
