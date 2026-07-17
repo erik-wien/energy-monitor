@@ -105,39 +105,110 @@ final class WetterTest extends TestCase {
         $this->assertSame('stabil', en_wetter_verbrauch($this->pdo, '2023-01-30')['trend']);
     }
 
-    // ── en_wetter_bewertung (Grenzwerte) ─────────────────────────────────────
+    public function test_disziplin_starkverbraucher_bei_teuren_stunden_unguenstig(): void {
+        // 9 Stunden; drei Starkverbraucher-Stunden (kwh > Tages-Ø·1,5) liegen
+        // ausgerechnet bei den teuersten Spotpreisen des Tages (oberes Terzil).
+        $kwh  = [0 => 1.0, 1 => 1.0, 2 => 1.0, 3 => 1.0, 4 => 1.0, 5 => 5.0, 6 => 8.0, 7 => 1.0, 8 => 6.0];
+        $spot = [0 => 5.0, 1 => 6.0, 2 => 7.0, 3 => 10.0, 4 => 11.0, 5 => 12.0, 6 => 20.0, 7 => 21.0, 8 => 22.0];
+        foreach ($kwh as $h => $v) {
+            $this->seedReading(sprintf('2026-07-16 %02d:00:00', $h), $v, $spot[$h]);
+        }
 
-    public function test_bewertung_grenzen(): void {
-        $this->assertSame('neutral',    en_wetter_bewertung(-0.02));
-        $this->assertSame('gut',        en_wetter_bewertung(-0.0201));
-        $this->assertSame('neutral',    en_wetter_bewertung(0.02));
-        $this->assertSame('unguenstig', en_wetter_bewertung(0.0201));
-        $this->assertSame('neutral',    en_wetter_bewertung(0.0));
+        $fakten = en_wetter_disziplin($this->pdo, '2026-07-16');
+
+        $this->assertCount(3, $fakten['laeufe']);
+        // Absteigend nach kwh: Stunde 6 (8,0), Stunde 8 (6,0), Stunde 5 (5,0).
+        $this->assertSame(6, $fakten['laeufe'][0]['stunde']);
+        $this->assertEqualsWithDelta(8.0, $fakten['laeufe'][0]['kwh'], 0.001);
+        $this->assertEqualsWithDelta(20.0, $fakten['laeufe'][0]['spot_ct'], 0.001);
+        $this->assertSame('teuer', $fakten['laeufe'][0]['lage']); // oberstes Terzil (20/21/22)
+        $this->assertSame(8, $fakten['laeufe'][1]['stunde']);
+        $this->assertSame('teuer', $fakten['laeufe'][1]['lage']);
+        $this->assertSame(5, $fakten['laeufe'][2]['stunde']);
+        $this->assertSame('mittel', $fakten['laeufe'][2]['lage']); // mittleres Terzil (10/11/12)
+        $this->assertSame('unguenstig', $fakten['bewertung']);
     }
 
-    public function test_disziplin_gewichtet_vs_einfach_aus_db(): void {
-        // Zwei Readings am selben Tag im 30-T-Fenster, unterschiedlich gewichtet:
-        // viel Verbrauch bei niedrigem Spotpreis → gewichteter Preis < einfacher Ø.
-        $this->seedReading('2026-07-10 12:00:00', 10.0, 10.0); // günstige Stunde, viel Verbrauch
-        $this->seedReading('2026-07-10 19:00:00', 1.0, 20.0);  // teure Stunde, wenig Verbrauch
+    public function test_disziplin_starkverbraucher_bei_guenstigen_stunden_gut(): void {
+        // Gleiches kwh-Muster wie oben, aber Spotpreise gespiegelt: die drei
+        // Starkverbraucher-Stunden liegen jetzt im günstigen Terzil.
+        $kwh  = [0 => 1.0, 1 => 1.0, 2 => 1.0, 3 => 1.0, 4 => 1.0, 5 => 5.0, 6 => 8.0, 7 => 1.0, 8 => 6.0];
+        $spot = [0 => 22.0, 1 => 21.0, 2 => 20.0, 3 => 12.0, 4 => 11.0, 5 => 10.0, 6 => 7.0, 7 => 6.0, 8 => 5.0];
+        foreach ($kwh as $h => $v) {
+            $this->seedReading(sprintf('2026-07-16 %02d:00:00', $h), $v, $spot[$h]);
+        }
 
-        $fakten = en_wetter_disziplin($this->pdo, '2026-07-17');
+        $fakten = en_wetter_disziplin($this->pdo, '2026-07-16');
 
-        $gewErwartet = (10.0 * 10.0 + 1.0 * 20.0) / (10.0 + 1.0); // ≈10.909
-        $einfachErwartet = (10.0 + 20.0) / 2; // 15.0
-        $this->assertEqualsWithDelta($gewErwartet, $fakten['gew'], 0.001);
-        $this->assertEqualsWithDelta($einfachErwartet, $fakten['einfach'], 0.001);
-        $this->assertEqualsWithDelta($gewErwartet / $einfachErwartet - 1.0, $fakten['gap_pct'], 0.001);
+        $this->assertCount(3, $fakten['laeufe']);
+        $this->assertSame(6, $fakten['laeufe'][0]['stunde']);
+        $this->assertSame('guenstig', $fakten['laeufe'][0]['lage']); // Terzil (5/6/7)
+        $this->assertSame(8, $fakten['laeufe'][1]['stunde']);
+        $this->assertSame('guenstig', $fakten['laeufe'][1]['lage']);
+        $this->assertSame(5, $fakten['laeufe'][2]['stunde']);
+        $this->assertSame('mittel', $fakten['laeufe'][2]['lage']);
         $this->assertSame('gut', $fakten['bewertung']);
     }
 
-    public function test_disziplin_ohne_readings_null_neutral(): void {
-        $fakten = en_wetter_disziplin($this->pdo, '2026-07-17');
+    public function test_disziplin_starkverbraucher_ausgeglichen_neutral(): void {
+        // Wie oben, aber Spotpreise so verteilt, dass unter den drei Läufen
+        // genau 1× guenstig, 1× teuer, 1× mittel steht -> Unentschieden -> neutral.
+        $kwh  = [0 => 1.0, 1 => 1.0, 2 => 1.0, 3 => 1.0, 4 => 1.0, 5 => 5.0, 6 => 8.0, 7 => 1.0, 8 => 6.0];
+        $spot = [0 => 6.0, 1 => 7.0, 2 => 10.0, 3 => 12.0, 4 => 20.0, 5 => 11.0, 6 => 22.0, 7 => 21.0, 8 => 5.0];
+        foreach ($kwh as $h => $v) {
+            $this->seedReading(sprintf('2026-07-16 %02d:00:00', $h), $v, $spot[$h]);
+        }
 
-        $this->assertNull($fakten['gew']);
-        $this->assertNull($fakten['einfach']);
-        $this->assertNull($fakten['gap_pct']);
+        $fakten = en_wetter_disziplin($this->pdo, '2026-07-16');
+
+        $this->assertCount(3, $fakten['laeufe']);
+        $this->assertSame(6, $fakten['laeufe'][0]['stunde']);
+        $this->assertSame('teuer', $fakten['laeufe'][0]['lage']);
+        $this->assertSame(8, $fakten['laeufe'][1]['stunde']);
+        $this->assertSame('guenstig', $fakten['laeufe'][1]['lage']);
+        $this->assertSame(5, $fakten['laeufe'][2]['stunde']);
+        $this->assertSame('mittel', $fakten['laeufe'][2]['lage']);
         $this->assertSame('neutral', $fakten['bewertung']);
+    }
+
+    public function test_disziplin_max_drei_laeufe_bei_mehr_kandidaten(): void {
+        // 6 Basisstunden à 1 kWh + 4 Starkverbraucher-Spitzen (10/9/8/7 kWh);
+        // alle vier liegen über Ø·1,5, aber es dürfen max. 3 Läufe zurückkommen
+        // — die schwächste Spitze (7 kWh) fällt raus.
+        foreach (range(0, 5) as $h) {
+            $this->seedReading(sprintf('2026-07-16 %02d:00:00', $h), 1.0, 10.0);
+        }
+        $this->seedReading('2026-07-16 06:00:00', 10.0, 10.0);
+        $this->seedReading('2026-07-16 07:00:00', 9.0, 10.0);
+        $this->seedReading('2026-07-16 08:00:00', 8.0, 10.0);
+        $this->seedReading('2026-07-16 09:00:00', 7.0, 10.0);
+
+        $fakten = en_wetter_disziplin($this->pdo, '2026-07-16');
+
+        $this->assertCount(3, $fakten['laeufe']);
+        $this->assertSame([6, 7, 8], array_column($fakten['laeufe'], 'stunde'));
+    }
+
+    public function test_disziplin_ohne_starkverbraucher_leere_laeufe_bewertung_null(): void {
+        // Flacher Verbrauch (alle Stunden gleich) -> keine Stunde > Ø·1,5.
+        foreach (range(0, 5) as $h) {
+            $this->seedReading(sprintf('2026-07-16 %02d:00:00', $h), 1.0, 10.0);
+        }
+
+        $fakten = en_wetter_disziplin($this->pdo, '2026-07-16');
+
+        $this->assertSame([], $fakten['laeufe']);
+        $this->assertNull($fakten['bewertung']);
+    }
+
+    public function test_disziplin_ohne_readings_leere_laeufe_bewertung_null(): void {
+        // Readings existieren, aber nicht am $gestern-Tag.
+        $this->seedReading('2026-07-15 12:00:00', 5.0, 10.0);
+
+        $fakten = en_wetter_disziplin($this->pdo, '2026-07-16');
+
+        $this->assertSame([], $fakten['laeufe']);
+        $this->assertNull($fakten['bewertung']);
     }
 
     // ── en_wetter_heute ──────────────────────────────────────────────────────

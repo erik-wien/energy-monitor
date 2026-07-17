@@ -135,38 +135,76 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
     ];
 }
 
+/** Starkverbraucher-Schwellen (Spec §2): Stunde zählt als Lauf ab Tages-Ø·Faktor, max. N Läufe. */
+const EN_STARKVERBRAUCH_FAKTOR      = 1.5;
+const EN_STARKVERBRAUCH_MAX_LAEUFE  = 3;
+
 /**
- * Lastdisziplin: gewichteter Spotpreis (Σ spot·kwh / Σkwh) vs. einfacher
- * Durchschnitt (AVG(spot)) der letzten 30 Tage (bis inkl. $latest) aus `readings`.
- * gap_pct = gew/einfach−1; bewertung: gap<−0,02 'gut', >0,02 'unguenstig', sonst 'neutral'.
+ * Disziplin-Kennzahlenblock (Spec §2): Starkverbraucher-Läufe von $gestern —
+ * Stunden mit `consumed_kwh > Tages-Ø·EN_STARKVERBRAUCH_FAKTOR`, absteigend
+ * nach kWh, max. EN_STARKVERBRAUCH_MAX_LAEUFE. Je Lauf die Spot-Lage der
+ * Stunde (Terzil der Tages-Spotpreise): unteres Drittel `guenstig`, oberes
+ * `teuer`, sonst `mittel`. Bewertung: mehrheitlich guenstig → `gut`,
+ * mehrheitlich teuer → `unguenstig`, sonst `neutral`. Keine Läufe (keine
+ * Readings oder kein Ausreißer) → `laeufe=[]`, `bewertung=null`.
  */
-function en_wetter_disziplin(PDO $pdo, string $latest): array {
+function en_wetter_disziplin(PDO $pdo, string $gestern): array {
     $stmt = $pdo->prepare(
-        "SELECT SUM(spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0) AS gew,
-                AVG(spot_ct) AS einfach
-         FROM readings
-         WHERE ts > DATE_SUB(?, INTERVAL 30 DAY) AND ts < DATE_ADD(?, INTERVAL 1 DAY)"
+        "SELECT HOUR(ts) AS h, SUM(consumed_kwh) AS kwh, AVG(spot_ct) AS spot
+         FROM readings WHERE DATE(ts) = ? GROUP BY HOUR(ts)"
     );
-    $stmt->execute([$latest, $latest]);
-    $row = $stmt->fetch();
+    $stmt->execute([$gestern]);
+    $rows = $stmt->fetchAll();
+    if (!$rows) return ['laeufe' => [], 'bewertung' => null];
 
-    $gew     = $row['gew']     !== null ? (float) $row['gew']     : null;
-    $einfach = $row['einfach'] !== null ? (float) $row['einfach'] : null;
+    $kwhByHour  = [];
+    $spotByHour = [];
+    foreach ($rows as $row) {
+        $h = (int) $row['h'];
+        $kwhByHour[$h]  = (float) $row['kwh'];
+        $spotByHour[$h] = (float) $row['spot'];
+    }
 
-    $gap = ($gew !== null && $einfach !== null && $einfach != 0.0)
-        ? ($gew / $einfach - 1.0)
-        : null;
+    $tagesAvg = array_sum($kwhByHour) / count($kwhByHour);
+    $schwelle = $tagesAvg * EN_STARKVERBRAUCH_FAKTOR;
 
-    $bewertung = $gap === null ? 'neutral' : en_wetter_bewertung($gap);
+    $kandidaten = array_filter($kwhByHour, fn(float $kwh) => $kwh > $schwelle);
+    if (!$kandidaten) return ['laeufe' => [], 'bewertung' => null];
 
-    return ['gew' => $gew, 'einfach' => $einfach, 'gap_pct' => $gap, 'bewertung' => $bewertung];
-}
+    arsort($kandidaten); // absteigend nach kwh (stabil bei Gleichstand)
+    $topStunden = array_slice(array_keys($kandidaten), 0, EN_STARKVERBRAUCH_MAX_LAEUFE);
 
-/** Bewertungs-Schwellen für die gewichtet-vs-einfach-Spot-Lücke: gap<−0,02 'gut', >0,02 'unguenstig', sonst 'neutral'. */
-function en_wetter_bewertung(float $gap): string {
-    if ($gap < -0.02) return 'gut';
-    if ($gap > 0.02)  return 'unguenstig';
-    return 'neutral';
+    // Terzil-Lage je Stunde aus den Tages-Spotwerten (positionale Drittel
+    // nach aufsteigendem Spotpreis sortiert).
+    $sortedH = array_keys($spotByHour);
+    usort($sortedH, fn($a, $b) => $spotByHour[$a] <=> $spotByHour[$b]);
+    $n = count($sortedH);
+    $lageByHour = [];
+    foreach ($sortedH as $i => $h) {
+        $tier = intdiv($i * 3, $n);
+        $lageByHour[$h] = $tier === 0 ? 'guenstig' : ($tier === 2 ? 'teuer' : 'mittel');
+    }
+
+    $laeufe = [];
+    $guenstigCount = 0;
+    $teuerCount    = 0;
+    foreach ($topStunden as $h) {
+        $lage = $lageByHour[$h] ?? 'mittel';
+        if ($lage === 'guenstig') $guenstigCount++;
+        elseif ($lage === 'teuer') $teuerCount++;
+        $laeufe[] = [
+            'stunde'  => $h,
+            'kwh'     => $kwhByHour[$h],
+            'spot_ct' => $spotByHour[$h],
+            'lage'    => $lage,
+        ];
+    }
+
+    $bewertung = $guenstigCount > $teuerCount
+        ? 'gut'
+        : ($teuerCount > $guenstigCount ? 'unguenstig' : 'neutral');
+
+    return ['laeufe' => $laeufe, 'bewertung' => $bewertung];
 }
 
 /**
