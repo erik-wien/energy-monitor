@@ -29,6 +29,10 @@ app:
   base_url: http://energie.test
   env: local
 APP_CODE: energie
+ai:
+  url: https://api.anthropic.com/v1/messages
+  model: claude-haiku-4-5-20251001
+  api_key: your_api_key
 cron_token: your_cron_token
 hofer:
   username: fu.armin@gmail.com
@@ -36,7 +40,3 @@ hofer:
   meter_id: AT0010000000000000001000012891962
 wienenergie:
   meter_id: AT0010000000000000001000012891962
-ai:
-  url: ''
-  model: ''
-  api_key: ''

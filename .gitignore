@@ -13,6 +13,7 @@ verbrauch_*.json
 
 # Private data and archives
 _Archiv/
+_Abgelehnt/
 scrapes/
 numbers/
 logs/
