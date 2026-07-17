@@ -154,9 +154,13 @@ if ($dGap !== null) {
     $wetterChips[] = en_wetter_chip($dLabel, $wetterMonthlyHref, ['pct' => $dGap * 100, 'dir' => $dDir]);
 }
 
+// Im Vorschau-Slot (#nach, morgen) trägt das Preisprofil Morgen-Zahlen — Chip
+// entsprechend beschriften.
+$wetterTagWort = ($wf['vorschau'] ?? false) ? 'morgen' : 'heute';
+
 $hAvg = $wf['heute']['avg'] ?? null;
 if ($hAvg !== null) {
-    $wetterChips[] = en_wetter_chip('heute Ø', $wetterDailyHref, null, number_format($hAvg, 1, ',', '.') . ' ct');
+    $wetterChips[] = en_wetter_chip($wetterTagWort . ' Ø', $wetterDailyHref, null, number_format($hAvg, 1, ',', '.') . ' ct');
 }
 
 $hMax = $wf['heute']['max'] ?? null;
