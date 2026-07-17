@@ -289,7 +289,7 @@ final class WetterTest extends TestCase {
     // ── en_wetter_preis ──────────────────────────────────────────────────────
 
     public function test_preis_heute_und_morgen_profile_plus_vergleiche(): void {
-        // heute-Profil (readings): Ø 10 ct/kWh, Spitze 20 (max/avg=2.0 -> nicht > 2.0 -> wolke).
+        // heute-Profil (readings): Ø 12,5 ct/kWh, Spitze 20 (max/avg=1,6 -> zwischen 1,4 und 2,0 -> wolke).
         $this->seedHourReading('2026-07-17', 8, 5.0);
         $this->seedHourReading('2026-07-17', 12, 20.0);
         // morgen-Profil.
@@ -310,7 +310,7 @@ final class WetterTest extends TestCase {
 
         $this->assertEqualsWithDelta(12.5 / 8.0 - 1.0, $preis['heute_vs_ueblich_pct'], 0.001);
         $this->assertEqualsWithDelta(12.5 / 15.0 - 1.0, $preis['heute_vs_vorjahr_pct'], 0.001);
-        $this->assertSame(en_wetter_symbol($preis['heute']), $preis['symbol']);
+        $this->assertSame('wolke', $preis['symbol']);
     }
 
     public function test_preis_ohne_morgen_param_morgen_null(): void {
@@ -477,7 +477,8 @@ final class WetterTest extends TestCase {
         $this->assertFileExists($path);
         $this->assertSame('template', $result['quelle']);
         $this->assertNotSame('', $result['text']);
-        $this->assertNull($result['fakten']['disziplin']['gap_pct']);
+        $this->assertNull($result['fakten']['disziplin']['bewertung']);
+        $this->assertSame([], $result['fakten']['disziplin']['laeufe']);
     }
 
     // ── en_wetter_slot / Budget (TASK-6: max. 2 Haiku-Aufrufe/Tag) ───────────

@@ -151,7 +151,7 @@ const EN_STARKVERBRAUCH_MAX_LAEUFE  = 3;
 function en_wetter_disziplin(PDO $pdo, string $gestern): array {
     $stmt = $pdo->prepare(
         "SELECT HOUR(ts) AS h, SUM(consumed_kwh) AS kwh, AVG(spot_ct) AS spot
-         FROM readings WHERE DATE(ts) = ? GROUP BY HOUR(ts)"
+         FROM readings WHERE DATE(ts) = ? GROUP BY HOUR(ts) ORDER BY h"
     );
     $stmt->execute([$gestern]);
     $rows = $stmt->fetchAll();
