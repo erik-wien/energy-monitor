@@ -106,23 +106,21 @@ $wf = $w['fakten'];
 $wetterBrauchtRefresh = ($w['slot'] ?? '') !== en_wetter_slot(new DateTimeImmutable());
 
 /**
- * Wetterglyph je Lage: heute-Ø < 30-T-Ø (= Lastdisziplin-Referenz "einfach") →
- * Sonne; heute-Ø > 1,25×Ø oder heutige Spitzenstunden → Wolke; heute-Max > 2×Ø →
- * Gewitter (Spec §4). Fehlende Referenzwerte → neutral (Sonne).
+ * Wetterglyph aus dem Preis-Symbol (Spec §5, v2-Fakten `preis.symbol`):
+ * 'sonne' -> ui-icon-sun, 'wolke' -> ui-icon-cloud, 'gewitter' ->
+ * ui-icon-cloud-lightning. Bevorzugt das top-level Cache-Feld `$w['symbol']`
+ * (Task 6, ohne Neurechnung); fällt sonst auf `$wf['preis']['symbol']` zurück,
+ * bei Alt-Cache (fehlt beides) auf 'wolke'.
  */
-function en_wetter_glyph(array $fakten): string {
-    $ref = $fakten['disziplin']['einfach'] ?? null;
-    $avg = $fakten['heute']['avg'] ?? null;
-    if ($ref === null || $ref <= 0.0 || $avg === null) return 'sun';
-
-    $max     = $fakten['heute']['max'] ?? null;
-    $spitzen = $fakten['heute']['spitzen'] ?? [];
-
-    if ($max !== null && $max > 2.0 * $ref) return 'cloud-lightning';
-    if ($avg > 1.25 * $ref || $spitzen)      return 'cloud';
-    return 'sun';
+function en_wetter_glyph(?string $symbol): string {
+    return match ($symbol) {
+        'sonne'    => 'sun',
+        'gewitter' => 'cloud-lightning',
+        default    => 'cloud', // 'wolke' oder fehlend/unbekannt
+    };
 }
-$wetterGlyph = en_wetter_glyph($wf);
+$wetterSymbol = $w['symbol'] ?? $wf['preis']['symbol'] ?? null;
+$wetterGlyph  = en_wetter_glyph($wetterSymbol);
 
 /** Fakten-Chip: Label + entweder ein Delta (reuses en_chip()) oder Klartext, klickbar. */
 function en_wetter_chip(string $label, string $href, ?array $delta = null, string $klartext = ''): string {
@@ -140,38 +138,35 @@ $wetterDailyHref   = $base . '/daily.php?date=' . htmlspecialchars($w['datum']);
 
 $wetterChips = [];
 
-$vDelta = $wf['verbrauch']['delta_pct'] ?? null;
-if ($vDelta !== null) {
-    $vDir = abs($vDelta) < 0.005 ? 'flat' : ($vDelta > 0 ? 'up' : 'down');
-    $wetterChips[] = en_wetter_chip('Verbrauch', $wetterMonthlyHref, ['pct' => $vDelta * 100, 'dir' => $vDir]);
-}
-
-$dGap = $wf['disziplin']['gap_pct'] ?? null;
-if ($dGap !== null) {
-    $dBew   = $wf['disziplin']['bewertung'];
-    $dDir   = $dBew === 'gut' ? 'down' : ($dBew === 'unguenstig' ? 'up' : 'flat');
-    $dLabel = 'Lastdisziplin ' . ($dBew === 'unguenstig' ? 'ungünstig' : $dBew);
-    $wetterChips[] = en_wetter_chip($dLabel, $wetterMonthlyHref, ['pct' => $dGap * 100, 'dir' => $dDir]);
+// Optionaler Chip (Spec §5): Verbrauch ggü. Vorjahr, nur wenn die v2-Fakten
+// einen Vorjahreswert liefern konnten (w7_yoy_pct).
+$yoy = $wf['verbrauch']['w7_yoy_pct'] ?? null;
+if ($yoy !== null) {
+    $yDir = abs($yoy) < 0.005 ? 'flat' : ($yoy > 0 ? 'up' : 'down');
+    $wetterChips[] = en_wetter_chip('Verbrauch ggü. Vorjahr', $wetterMonthlyHref, ['pct' => $yoy * 100, 'dir' => $yDir]);
 }
 
 // Im Vorschau-Slot (#nach, morgen) trägt das Preisprofil Morgen-Zahlen — Chip
 // entsprechend beschriften.
 $wetterTagWort = ($wf['vorschau'] ?? false) ? 'morgen' : 'heute';
 
-$hAvg = $wf['heute']['avg'] ?? null;
+// v2-Fakten: Profil liegt unter preis.heute (statt vormals heute direkt).
+$wetterHeuteProfil = $wf['preis']['heute'] ?? null;
+
+$hAvg = $wetterHeuteProfil['avg'] ?? null;
 if ($hAvg !== null) {
     $wetterChips[] = en_wetter_chip($wetterTagWort . ' Ø', $wetterDailyHref, null, number_format($hAvg, 1, ',', '.') . ' ct');
 }
 
-$hMax = $wf['heute']['max'] ?? null;
-$hMaxH = $wf['heute']['max_h'] ?? null;
+$hMax = $wetterHeuteProfil['max'] ?? null;
+$hMaxH = $wetterHeuteProfil['max_h'] ?? null;
 if ($hMax !== null && $hMaxH !== null) {
     $wetterChips[] = en_wetter_chip('Spitze ' . $hMaxH . ' h', $wetterDailyHref, null, number_format($hMax, 1, ',', '.') . ' ct');
 }
 
-$gVon = $wf['heute']['guenstig_von'] ?? null;
-$gBis = $wf['heute']['guenstig_bis'] ?? null;
-$gAvg = $wf['heute']['guenstig_avg'] ?? null;
+$gVon = $wetterHeuteProfil['guenstig_von'] ?? null;
+$gBis = $wetterHeuteProfil['guenstig_bis'] ?? null;
+$gAvg = $wetterHeuteProfil['guenstig_avg'] ?? null;
 if ($gVon !== null && $gBis !== null && $gAvg !== null) {
     $wetterChips[] = en_wetter_chip('günstig ' . $gVon . '–' . $gBis . ' h', $wetterDailyHref, null, number_format($gAvg, 1, ',', '.') . ' ct');
 }
