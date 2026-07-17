@@ -566,7 +566,7 @@ function en_wetter_faktenblatt(array $fakten): string {
 }
 
 /**
- * en_wetter_template() — deterministischer 2–4-Satz-Bericht aus Satzbausteinen
+ * en_wetter_template() — deterministischer Kurzbericht aus Satzbausteinen
  * (Fallback ohne KI, s. Spec §1/§3). Baut auf der neuen en_wetter_fakten()-
  * Struktur auf: Verbrauch-Delta (+YoY), Disziplin-Kurzsatz, heutiges (+ ggf.
  * morgiges) Preisprofil, weicher Hinweis wenn `stand.aktuell` false ist.
