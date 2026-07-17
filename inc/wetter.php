@@ -285,6 +285,160 @@ function en_wetter_hat_readings(PDO $pdo, string $tag): bool {
     return $stmt->fetchColumn() !== false;
 }
 
+// ── Preisprofil (heute+morgen), Symbol, Vergleiche, Auffälligkeiten (Spec §2, Task 3) ──
+
+/** Symbol-Schwellen fürs heutige Preisprofil: max<=avg·SONNE -> 'sonne', max>avg·GEWITTER -> 'gewitter', sonst 'wolke'. */
+const EN_SYMBOL_SONNE    = 1.4;
+const EN_SYMBOL_GEWITTER = 2.0;
+
+/** Zurückliegende Monate für den Preis-Rekord-Vergleich in en_wetter_auffaelligkeiten(). */
+const EN_AUFFAELLIG_MONATE = 3;
+
+/** Schwelle für „Verbrauch gestern deutlich unter dem Üblichen" (oberes Pendant ist EN_STARKVERBRAUCH_FAKTOR). */
+const EN_AUFFAELLIG_VERBRAUCH_NIEDRIG = 0.5;
+
+/**
+ * Wetterglyph aus einem Preisprofil (`en_wetter_heute()`-Format): breit-günstig
+ * (Spitze höchstens EN_SYMBOL_SONNE·Ø) → 'sonne'; extreme Spitze
+ * (> EN_SYMBOL_GEWITTER·Ø) → 'gewitter'; sonst 'wolke'. Leeres Profil
+ * (`avg` fehlt) → 'wolke' (neutral).
+ */
+function en_wetter_symbol(array $profil): string {
+    $avg = $profil['avg'] ?? null;
+    $max = $profil['max'] ?? null;
+    if ($avg === null || $max === null) return 'wolke';
+    if ($max <= $avg * EN_SYMBOL_SONNE)    return 'sonne';
+    if ($max >  $avg * EN_SYMBOL_GEWITTER) return 'gewitter';
+    return 'wolke';
+}
+
+/** Ø `daily_summary.avg_spot_ct` im Fenster `(start, ende]`; null wenn keine Zeilen. */
+function en_wetter_avg_spot_fenster(PDO $pdo, string $start, string $ende): ?float {
+    $stmt = $pdo->prepare(
+        "SELECT AVG(avg_spot_ct) FROM daily_summary WHERE day > ? AND day <= ?"
+    );
+    $stmt->execute([$start, $ende]);
+    $avg = $stmt->fetchColumn();
+    return $avg !== null ? (float) $avg : null;
+}
+
+/**
+ * Preisprofil-Block (Spec §2): heutiges (+ optional morgiges) Preisprofil aus
+ * `en_wetter_heute()`, verglichen mit der 30-Tage-Historie bis inkl. gestern
+ * (=`$heute`−1) und mit dem gleichen Kalendertag ±3 Tage im Vorjahr (jeweils
+ * Ø `daily_summary.avg_spot_ct`, da `$heute` selbst i. d. R. noch nicht in
+ * `daily_summary` steht). Vergleichswerte sind null, wenn heute kein Profil
+ * (`avg`) hat oder die jeweilige Historie fehlt.
+ */
+function en_wetter_preis(PDO $pdo, string $heute, ?string $morgen): array {
+    $profilHeute  = en_wetter_heute($pdo, $heute);
+    $profilMorgen = $morgen !== null ? en_wetter_heute($pdo, $morgen) : null;
+
+    $heuteAvg = $profilHeute['avg'] ?? null;
+
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 1 DAY)");
+    $stmt->execute([$heute]);
+    $ueblichEnde = $stmt->fetchColumn();
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 30 DAY)");
+    $stmt->execute([$ueblichEnde]);
+    $ueblichStart = $stmt->fetchColumn();
+    $ueblichAvg   = $heuteAvg !== null ? en_wetter_avg_spot_fenster($pdo, $ueblichStart, $ueblichEnde) : null;
+
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 1 YEAR)");
+    $stmt->execute([$heute]);
+    $vorjahrTag = $stmt->fetchColumn();
+    // Fenster [vorjahrTag-3, vorjahrTag+3] (inklusive); en_wetter_avg_spot_fenster()
+    // erwartet ein exklusives Start-Datum, daher -4 Tage als Start-Schranke.
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 4 DAY)");
+    $stmt->execute([$vorjahrTag]);
+    $vorjahrStart = $stmt->fetchColumn();
+    $stmt = $pdo->prepare("SELECT DATE_ADD(?, INTERVAL 3 DAY)");
+    $stmt->execute([$vorjahrTag]);
+    $vorjahrEnde = $stmt->fetchColumn();
+    $vorjahrAvg  = $heuteAvg !== null
+        ? en_wetter_avg_spot_fenster($pdo, $vorjahrStart, $vorjahrEnde)
+        : null;
+
+    $ueblichPct = ($heuteAvg !== null && $ueblichAvg !== null && $ueblichAvg != 0.0)
+        ? ($heuteAvg / $ueblichAvg - 1.0)
+        : null;
+    $vorjahrPct = ($heuteAvg !== null && $vorjahrAvg !== null && $vorjahrAvg != 0.0)
+        ? ($heuteAvg / $vorjahrAvg - 1.0)
+        : null;
+
+    return [
+        'heute'                 => $profilHeute,
+        'morgen'                => $profilMorgen,
+        'heute_vs_ueblich_pct'  => $ueblichPct,
+        'heute_vs_vorjahr_pct'  => $vorjahrPct,
+        'symbol'                => en_wetter_symbol($profilHeute),
+    ];
+}
+
+/**
+ * Auffälligkeiten (Spec §2): 0..3 mit PHP erkannte, konkrete Beobachtungen
+ * (Zahl+Einheit), die Haiku hervorheben kann — nie erfunden, nie ohne Beleg.
+ * Aktuell zwei Prüfungen (je maximal eine Auffälligkeit):
+ *  - Preisrekord: heutiger Ø-Spotpreis ($preisHeute['avg']) niedriger/höher als
+ *    das Minimum/Maximum der letzten EN_AUFFAELLIG_MONATE Monate (Ø `daily_summary
+ *    .avg_spot_ct`, bis inkl. $gestern).
+ *  - Verbrauchsausreißer: $gestern-Verbrauch über EN_STARKVERBRAUCH_FAKTOR bzw.
+ *    unter EN_AUFFAELLIG_VERBRAUCH_NIEDRIG des Ø-Tagesverbrauchs der 30 Tage davor.
+ * Fehlt die nötige Historie, wird die jeweilige Prüfung übersprungen (kein Fehler).
+ */
+function en_wetter_auffaelligkeiten(PDO $pdo, string $gestern, array $preisHeute): array {
+    $auffaellig = [];
+
+    $heuteAvg = $preisHeute['avg'] ?? null;
+    if ($heuteAvg !== null) {
+        $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL " . EN_AUFFAELLIG_MONATE . " MONTH)");
+        $stmt->execute([$gestern]);
+        $start = $stmt->fetchColumn();
+
+        $stmt = $pdo->prepare(
+            "SELECT MIN(avg_spot_ct), MAX(avg_spot_ct) FROM daily_summary WHERE day > ? AND day <= ?"
+        );
+        $stmt->execute([$start, $gestern]);
+        [$minSpot, $maxSpot] = $stmt->fetch(PDO::FETCH_NUM);
+
+        $heuteTxt = number_format($heuteAvg, 1, ',', '.');
+        if ($minSpot !== null && $heuteAvg < (float) $minSpot) {
+            $auffaellig[] = "Heutiger Durchschnittspreis {$heuteTxt} ct/kWh — niedrigster seit " . EN_AUFFAELLIG_MONATE . " Monaten.";
+        } elseif ($maxSpot !== null && $heuteAvg > (float) $maxSpot) {
+            $auffaellig[] = "Heutiger Durchschnittspreis {$heuteTxt} ct/kWh — höchster seit " . EN_AUFFAELLIG_MONATE . " Monaten.";
+        }
+    }
+
+    $stmt = $pdo->prepare("SELECT consumed_kwh FROM daily_summary WHERE day = ?");
+    $stmt->execute([$gestern]);
+    $gesternRow = $stmt->fetchColumn();
+    $gesternKwh = $gesternRow !== false ? (float) $gesternRow : null;
+
+    if ($gesternKwh !== null) {
+        $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 31 DAY)");
+        $stmt->execute([$gestern]);
+        $baseStart = $stmt->fetchColumn();
+        $stmt = $pdo->prepare(
+            "SELECT AVG(consumed_kwh) FROM daily_summary WHERE day > ? AND day < ?"
+        );
+        $stmt->execute([$baseStart, $gestern]);
+        $baseAvgRow = $stmt->fetchColumn();
+        $baseAvg    = $baseAvgRow !== null ? (float) $baseAvgRow : null;
+
+        if ($baseAvg !== null && $baseAvg > 0.0) {
+            $kwhTxt = number_format($gesternKwh, 1, ',', '.');
+            $avgTxt = number_format($baseAvg, 1, ',', '.');
+            if ($gesternKwh > $baseAvg * EN_STARKVERBRAUCH_FAKTOR) {
+                $auffaellig[] = "Verbrauch gestern {$kwhTxt} kWh, deutlich über dem Üblichen (Ø {$avgTxt} kWh).";
+            } elseif ($gesternKwh < $baseAvg * EN_AUFFAELLIG_VERBRAUCH_NIEDRIG) {
+                $auffaellig[] = "Verbrauch gestern {$kwhTxt} kWh, deutlich unter dem Üblichen (Ø {$avgTxt} kWh).";
+            }
+        }
+    }
+
+    return $auffaellig;
+}
+
 /**
  * en_wetter_template() — deterministischer 2–4-Satz-Bericht aus Satzbausteinen
  * (Fallback ohne KI, s. Spec §1). Null-Felder werden übersprungen; völlig leere

@@ -266,6 +266,137 @@ final class WetterTest extends TestCase {
         $this->assertSame('2026-07-17', $fakten['heute']['datum']);
     }
 
+    // ── en_wetter_symbol ─────────────────────────────────────────────────────
+
+    public function test_symbol_sonne_wenn_max_bis_1_4x_avg(): void {
+        $this->assertSame('sonne', en_wetter_symbol(['avg' => 10.0, 'max' => 14.0])); // genau Grenze (<=)
+        $this->assertSame('sonne', en_wetter_symbol(['avg' => 10.0, 'max' => 10.0]));
+    }
+
+    public function test_symbol_wolke_im_mittleren_bereich(): void {
+        $this->assertSame('wolke', en_wetter_symbol(['avg' => 10.0, 'max' => 15.0]));
+        $this->assertSame('wolke', en_wetter_symbol(['avg' => 10.0, 'max' => 20.0])); // genau Grenze (nicht > , also nicht gewitter)
+    }
+
+    public function test_symbol_gewitter_wenn_max_ueber_2x_avg(): void {
+        $this->assertSame('gewitter', en_wetter_symbol(['avg' => 10.0, 'max' => 20.01]));
+    }
+
+    public function test_symbol_leeres_profil_wolke(): void {
+        $this->assertSame('wolke', en_wetter_symbol(['avg' => null, 'max' => null]));
+    }
+
+    // ── en_wetter_preis ──────────────────────────────────────────────────────
+
+    public function test_preis_heute_und_morgen_profile_plus_vergleiche(): void {
+        // heute-Profil (readings): Ø 10 ct/kWh, Spitze 20 (max/avg=2.0 -> nicht > 2.0 -> wolke).
+        $this->seedHourReading('2026-07-17', 8, 5.0);
+        $this->seedHourReading('2026-07-17', 12, 20.0);
+        // morgen-Profil.
+        $this->seedHourReading('2026-07-18', 12, 8.0);
+        // 30-Tage-Historie bis inkl. gestern (2026-07-16): Ø 8 ct/kWh.
+        $this->seedTag('2026-07-16', 1.0, 8.0);
+        $this->seedTag('2026-07-15', 1.0, 8.0);
+        // Vorjahres-Fenster (2026-07-17 -1 Jahr = 2025-07-17, ±3 Tage): Ø 15 ct/kWh.
+        $this->seedTag('2025-07-16', 1.0, 15.0);
+
+        $preis = en_wetter_preis($this->pdo, '2026-07-17', '2026-07-18');
+
+        $this->assertSame('2026-07-17', $preis['heute']['datum']);
+        $this->assertEqualsWithDelta((5.0 + 20.0) / 2.0, $preis['heute']['avg'], 0.001); // 12,5
+        $this->assertNotNull($preis['morgen']);
+        $this->assertSame('2026-07-18', $preis['morgen']['datum']);
+        $this->assertEqualsWithDelta(8.0, $preis['morgen']['avg'], 0.001);
+
+        $this->assertEqualsWithDelta(12.5 / 8.0 - 1.0, $preis['heute_vs_ueblich_pct'], 0.001);
+        $this->assertEqualsWithDelta(12.5 / 15.0 - 1.0, $preis['heute_vs_vorjahr_pct'], 0.001);
+        $this->assertSame(en_wetter_symbol($preis['heute']), $preis['symbol']);
+    }
+
+    public function test_preis_ohne_morgen_param_morgen_null(): void {
+        $this->seedHourReading('2026-07-17', 12, 10.0);
+
+        $preis = en_wetter_preis($this->pdo, '2026-07-17', null);
+
+        $this->assertNull($preis['morgen']);
+    }
+
+    public function test_preis_ohne_historie_vergleiche_null(): void {
+        $this->seedHourReading('2026-07-17', 12, 10.0);
+
+        $preis = en_wetter_preis($this->pdo, '2026-07-17', null);
+
+        $this->assertNull($preis['heute_vs_ueblich_pct']);
+        $this->assertNull($preis['heute_vs_vorjahr_pct']);
+    }
+
+    // ── en_wetter_auffaelligkeiten ───────────────────────────────────────────
+
+    public function test_auffaelligkeiten_hoher_verbrauch_gestern(): void {
+        // Baseline (30 T vor gestern, exkl. gestern): Ø 2,0 kWh. Gestern: 5,0 kWh (> Ø·1,5).
+        $this->seedTag('2026-07-01', 2.0, 10.0);
+        $this->seedTag('2026-07-02', 2.0, 10.0);
+        $this->seedTag('2026-07-16', 5.0, 10.0);
+
+        $auffaellig = en_wetter_auffaelligkeiten($this->pdo, '2026-07-16', ['avg' => null, 'max' => null]);
+
+        $this->assertCount(1, $auffaellig);
+        $this->assertStringContainsString('5', $auffaellig[0]);
+        $this->assertStringContainsString('kWh', $auffaellig[0]);
+        $this->assertStringContainsString('über', $auffaellig[0]);
+    }
+
+    public function test_auffaelligkeiten_niedriger_verbrauch_gestern(): void {
+        // Baseline Ø 2,0 kWh, gestern 0,5 kWh (< Ø·0,5 = 1,0).
+        $this->seedTag('2026-07-01', 2.0, 10.0);
+        $this->seedTag('2026-07-02', 2.0, 10.0);
+        $this->seedTag('2026-07-16', 0.5, 10.0);
+
+        $auffaellig = en_wetter_auffaelligkeiten($this->pdo, '2026-07-16', ['avg' => null, 'max' => null]);
+
+        $this->assertCount(1, $auffaellig);
+        $this->assertStringContainsString('unter', $auffaellig[0]);
+    }
+
+    public function test_auffaelligkeiten_niedrigster_preis_seit_n_monaten(): void {
+        // 3-Monats-Fenster bis inkl. gestern: Minimum 8 ct/kWh. Heute (übergeben
+        // via $preisHeute) liegt mit 4 ct/kWh deutlich darunter.
+        $this->seedTag('2026-06-01', 1.0, 8.0);
+        $this->seedTag('2026-07-01', 1.0, 12.0);
+
+        $auffaellig = en_wetter_auffaelligkeiten($this->pdo, '2026-07-16', ['avg' => 4.0, 'max' => 4.0]);
+
+        $this->assertCount(1, $auffaellig);
+        $this->assertStringContainsString('4', $auffaellig[0]);
+        $this->assertStringContainsString('ct/kWh', $auffaellig[0]);
+        $this->assertStringContainsString('niedrigster', $auffaellig[0]);
+    }
+
+    public function test_auffaelligkeiten_hoechster_preis_seit_n_monaten(): void {
+        $this->seedTag('2026-06-01', 1.0, 8.0);
+        $this->seedTag('2026-07-01', 1.0, 12.0);
+
+        $auffaellig = en_wetter_auffaelligkeiten($this->pdo, '2026-07-16', ['avg' => 20.0, 'max' => 20.0]);
+
+        $this->assertCount(1, $auffaellig);
+        $this->assertStringContainsString('höchster', $auffaellig[0]);
+    }
+
+    public function test_auffaelligkeiten_nichts_bemerkenswertes_leer(): void {
+        $this->seedTag('2026-07-01', 2.0, 10.0);
+        $this->seedTag('2026-07-16', 2.1, 10.0); // nahe Ø, keine Starkverbrauch-Auffälligkeit
+
+        $auffaellig = en_wetter_auffaelligkeiten($this->pdo, '2026-07-16', ['avg' => 10.0, 'max' => 10.0]);
+
+        $this->assertSame([], $auffaellig);
+    }
+
+    public function test_auffaelligkeiten_ohne_jegliche_historie_leer(): void {
+        $auffaellig = en_wetter_auffaelligkeiten($this->pdo, '2026-07-16', ['avg' => null, 'max' => null]);
+
+        $this->assertSame([], $auffaellig);
+    }
+
     // ── en_wetter_lesen / en_wetter_regenerieren (Cache + Off-Path, Spec §3) ──
     //
     // $pdo/$cachePath sind bei beiden Funktionen injizierbar (Default: globales
