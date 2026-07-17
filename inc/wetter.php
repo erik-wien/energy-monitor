@@ -37,29 +37,102 @@ function en_wetter_fakten(PDO $pdo, string $latest, ?string $profilTag = null, b
     ];
 }
 
+/** Trend-Schwelle (Spec §2): 30-T-Verbrauch vs. die 30 Tage davor, >|5 %| = steigend/fallend. */
+const EN_TREND_SCHWELLE = 0.05;
+
 /**
- * Verbrauch der letzten 30 Tage (bis inkl. $latest) vs. Baseline: Ø Tagesverbrauch
- * der 90 Tage davor (latest-120 .. latest-30] × 30. basis<=0 → delta_pct=null.
+ * Summiert `daily_summary.consumed_kwh` über ein Fenster `(day > start, day <= ende]`.
+ * Liefert null, wenn das Fenster keine Zeilen enthält (SUM() über 0 Zeilen ist NULL),
+ * sonst den (ggf. 0,0) Summenwert.
  */
-function en_wetter_verbrauch(PDO $pdo, string $latest): array {
+function en_wetter_sum_fenster(PDO $pdo, string $start, string $ende): ?float {
     $stmt = $pdo->prepare(
-        "SELECT SUM(consumed_kwh) FROM daily_summary
-         WHERE day > DATE_SUB(?, INTERVAL 30 DAY) AND day <= ?"
+        "SELECT SUM(consumed_kwh) FROM daily_summary WHERE day > ? AND day <= ?"
     );
-    $stmt->execute([$latest, $latest]);
-    $ist = (float) ($stmt->fetchColumn() ?: 0.0);
+    $stmt->execute([$start, $ende]);
+    $sum = $stmt->fetchColumn();
+    return $sum !== null ? (float) $sum : null;
+}
 
-    $stmt = $pdo->prepare(
-        "SELECT AVG(consumed_kwh) FROM daily_summary
-         WHERE day > DATE_SUB(?, INTERVAL 120 DAY) AND day <= DATE_SUB(?, INTERVAL 30 DAY)"
-    );
-    $stmt->execute([$latest, $latest]);
-    $avgTag = $stmt->fetchColumn();
-    $basis  = $avgTag !== null ? (float) $avgTag * 30 : 0.0;
+/**
+ * Verbrauchs-Kennzahlenblock, verankert auf $gestern (Spec §2): gestriger
+ * Verbrauch, Woche/Monat (bis inkl. $gestern) je mit Vorjahresvergleich bzw.
+ * Mehrjahr-„üblich"-Schnitt (2024+2025), sowie 30-Tage-Trend ggü. den 30 Tagen
+ * davor. Alle Vergleichswerte sind null, wenn die entsprechende Historie fehlt
+ * (nie 0/Fehler).
+ */
+function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
+    $stmt = $pdo->prepare("SELECT consumed_kwh FROM daily_summary WHERE day = ?");
+    $stmt->execute([$gestern]);
+    $gesternRow = $stmt->fetchColumn();
+    $gesternKwh = $gesternRow !== false ? (float) $gesternRow : null;
 
-    $delta = $basis > 0.0 ? ($ist / $basis - 1.0) : null;
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 7 DAY)");
+    $stmt->execute([$gestern]);
+    $w7Start = $stmt->fetchColumn();
+    $w7Kwh   = en_wetter_sum_fenster($pdo, $w7Start, $gestern) ?? 0.0;
 
-    return ['ist_kwh' => $ist, 'basis_kwh' => $basis, 'delta_pct' => $delta];
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 1 YEAR)");
+    $stmt->execute([$gestern]);
+    $w7VorjahrEnde  = $stmt->fetchColumn();
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 7 DAY)");
+    $stmt->execute([$w7VorjahrEnde]);
+    $w7VorjahrStart = $stmt->fetchColumn();
+    $w7VorjahrKwh   = en_wetter_sum_fenster($pdo, $w7VorjahrStart, $w7VorjahrEnde);
+
+    $w7YoyPct = ($w7VorjahrKwh !== null && $w7VorjahrKwh != 0.0)
+        ? ($w7Kwh / $w7VorjahrKwh - 1.0)
+        : null;
+
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 30 DAY)");
+    $stmt->execute([$gestern]);
+    $d30Start = $stmt->fetchColumn();
+    $d30Kwh   = en_wetter_sum_fenster($pdo, $d30Start, $gestern) ?? 0.0;
+
+    $ueblichWerte = [];
+    foreach ([1, 2] as $jahre) {
+        $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL {$jahre} YEAR)");
+        $stmt->execute([$gestern]);
+        $ende = $stmt->fetchColumn();
+        $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 30 DAY)");
+        $stmt->execute([$ende]);
+        $start = $stmt->fetchColumn();
+        $sum   = en_wetter_sum_fenster($pdo, $start, $ende);
+        if ($sum !== null) $ueblichWerte[] = $sum;
+    }
+    $d30Ueblich = $ueblichWerte ? array_sum($ueblichWerte) / count($ueblichWerte) : null;
+
+    $d30DeltaPct = ($d30Ueblich !== null && $d30Ueblich != 0.0)
+        ? ($d30Kwh / $d30Ueblich - 1.0)
+        : null;
+
+    $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 60 DAY)");
+    $stmt->execute([$gestern]);
+    $vorBlockStart = $stmt->fetchColumn();
+    $vorBlockSum   = en_wetter_sum_fenster($pdo, $vorBlockStart, $d30Start);
+
+    $trend = null;
+    if ($vorBlockSum !== null && $vorBlockSum != 0.0) {
+        $trendPct = $d30Kwh / $vorBlockSum - 1.0;
+        if ($trendPct > EN_TREND_SCHWELLE) {
+            $trend = 'steigend';
+        } elseif ($trendPct < -EN_TREND_SCHWELLE) {
+            $trend = 'fallend';
+        } else {
+            $trend = 'stabil';
+        }
+    }
+
+    return [
+        'gestern_kwh'     => $gesternKwh,
+        'w7_kwh'          => $w7Kwh,
+        'w7_vorjahr_kwh'  => $w7VorjahrKwh,
+        'w7_yoy_pct'      => $w7YoyPct,
+        'd30_kwh'         => $d30Kwh,
+        'd30_ueblich_kwh' => $d30Ueblich,
+        'd30_delta_pct'   => $d30DeltaPct,
+        'trend'           => $trend,
+    ];
 }
 
 /**

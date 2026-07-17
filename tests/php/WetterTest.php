@@ -40,29 +40,69 @@ final class WetterTest extends TestCase {
 
     // ── en_wetter_verbrauch / en_wetter_fakten ──────────────────────────────
 
-    public function test_verbrauch_30_tage_delta_korrekt(): void {
-        // ist-Fenster: Tage > 2026-06-17 und <= 2026-07-17 (letzte 30 T).
-        $this->seedTag('2026-07-01', 10.0, 12.0);
-        $this->seedTag('2026-07-02', 10.0, 12.0);
-        // basis-Fenster: Tage > 2026-03-19 und <= 2026-06-17 (90 T davor).
-        $this->seedTag('2026-05-01', 5.0, 12.0);
-        $this->seedTag('2026-05-02', 5.0, 12.0);
+    public function test_verbrauch_voll_alle_felder_korrekt(): void {
+        // gestern + w7-Fenster (day > 2026-07-09 und <= 2026-07-16).
+        $this->seedTag('2026-07-16', 5.0, 12.0);  // gestern
+        $this->seedTag('2026-07-15', 3.0, 12.0);  // w7
+        $this->seedTag('2026-07-01', 4.0, 12.0);  // d30, nicht w7
+        // w7-Vorjahr-Fenster (day > 2025-07-09 und <= 2025-07-16) UND zugleich
+        // im üblich-Jahr-1-Block (day > 2025-06-16 und <= 2025-07-16).
+        $this->seedTag('2025-07-14', 2.0, 12.0);
+        // nur im üblich-Jahr-1-Block.
+        $this->seedTag('2025-06-20', 6.0, 12.0);
+        // üblich-Jahr-2-Block (day > 2024-06-16 und <= 2024-07-16).
+        $this->seedTag('2024-07-01', 10.0, 12.0);
+        // Trend-Vorblock (day > 2026-05-17 und <= 2026-06-16).
+        $this->seedTag('2026-06-01', 3.0, 12.0);
 
-        $fakten = en_wetter_verbrauch($this->pdo, '2026-07-17');
+        $fakten = en_wetter_verbrauch($this->pdo, '2026-07-16');
 
-        $this->assertEqualsWithDelta(20.0, $fakten['ist_kwh'], 0.001);
-        $this->assertEqualsWithDelta(150.0, $fakten['basis_kwh'], 0.001); // AVG(5,5)*30
-        $this->assertEqualsWithDelta(20.0 / 150.0 - 1.0, $fakten['delta_pct'], 0.001);
+        $this->assertEqualsWithDelta(5.0, $fakten['gestern_kwh'], 0.001);
+        $this->assertEqualsWithDelta(8.0, $fakten['w7_kwh'], 0.001);          // 5+3
+        $this->assertEqualsWithDelta(2.0, $fakten['w7_vorjahr_kwh'], 0.001);
+        $this->assertEqualsWithDelta(8.0 / 2.0 - 1.0, $fakten['w7_yoy_pct'], 0.001);
+        $this->assertEqualsWithDelta(12.0, $fakten['d30_kwh'], 0.001);        // 5+3+4
+        $this->assertEqualsWithDelta(9.0, $fakten['d30_ueblich_kwh'], 0.001); // avg(8,10)
+        $this->assertEqualsWithDelta(12.0 / 9.0 - 1.0, $fakten['d30_delta_pct'], 0.001);
+        $this->assertSame('steigend', $fakten['trend']); // 12/3-1 = +300 %
     }
 
-    public function test_verbrauch_ohne_basis_delta_null(): void {
-        $this->seedTag('2026-07-01', 10.0, 12.0);
+    public function test_verbrauch_ohne_historie_alle_null_pfade(): void {
+        $fakten = en_wetter_verbrauch($this->pdo, '2026-07-16');
 
-        $fakten = en_wetter_verbrauch($this->pdo, '2026-07-17');
+        $this->assertNull($fakten['gestern_kwh']);
+        $this->assertEqualsWithDelta(0.0, $fakten['w7_kwh'], 0.001);
+        $this->assertNull($fakten['w7_vorjahr_kwh']);
+        $this->assertNull($fakten['w7_yoy_pct']);
+        $this->assertEqualsWithDelta(0.0, $fakten['d30_kwh'], 0.001);
+        $this->assertNull($fakten['d30_ueblich_kwh']);
+        $this->assertNull($fakten['d30_delta_pct']);
+        $this->assertNull($fakten['trend']);
+    }
 
-        $this->assertEqualsWithDelta(10.0, $fakten['ist_kwh'], 0.001);
-        $this->assertSame(0.0, $fakten['basis_kwh']);
-        $this->assertNull($fakten['delta_pct']);
+    public function test_verbrauch_trend_steigend_und_fallend(): void {
+        // Szenario steigend: d30-Tag trägt 105,1 kWh, Vorblock-Tag 100 kWh -> +5,1 %.
+        $this->seedTag('2020-01-30', 105.1, 12.0);
+        $this->seedTag('2019-12-30', 100.0, 12.0); // gestern - 31 Tage
+        $this->assertSame('steigend', en_wetter_verbrauch($this->pdo, '2020-01-30')['trend']);
+
+        // Szenario fallend: 94,9 vs 100 -> -5,1 %.
+        $this->seedTag('2021-01-30', 94.9, 12.0);
+        $this->seedTag('2020-12-30', 100.0, 12.0);
+        $this->assertSame('fallend', en_wetter_verbrauch($this->pdo, '2021-01-30')['trend']);
+    }
+
+    public function test_verbrauch_trend_stabil_knapp_unter_der_5_prozent_grenze(): void {
+        // Knapp innerhalb von ±5 % (4,9 %) muss 'stabil' bleiben — testet die
+        // strikte "> Schwelle" / "< -Schwelle"-Grenze ohne Fließkomma-Randfälle
+        // bei einer exakten 5,0-%-Quote.
+        $this->seedTag('2022-01-30', 104.9, 12.0);
+        $this->seedTag('2021-12-30', 100.0, 12.0);
+        $this->assertSame('stabil', en_wetter_verbrauch($this->pdo, '2022-01-30')['trend']);
+
+        $this->seedTag('2023-01-30', 95.1, 12.0);
+        $this->seedTag('2022-12-30', 100.0, 12.0);
+        $this->assertSame('stabil', en_wetter_verbrauch($this->pdo, '2023-01-30')['trend']);
     }
 
     // ── en_wetter_bewertung (Grenzwerte) ─────────────────────────────────────
