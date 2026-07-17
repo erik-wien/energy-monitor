@@ -549,9 +549,14 @@ if ($type === 'daily') {
         }
         // Move ist geschehen — ein Logging-Fehler darf den Erfolg nicht als 500
         // maskieren (sonst zeigt der Retry irreführend file_not_found).
+        // Kurze, auf die activity-Spalte (varchar(255)) gedeckelte Meldung — NICHT
+        // den vollen $fmt['problem']-Text (dumpt die CSV-Kopfzeile, ~225 Zeichen →
+        // „Data too long“, Insert scheitert, Audit-Eintrag ginge verloren). Der
+        // ausführliche Grund steht ohnehin in der UI-Warnung.
         try {
-            appendLog($con, 'import', 'Abgelehnte Datei aus Lane entfernt: ' . $name
-                . ' → _Abgelehnt/ (' . (string) ($fmt['problem'] ?? 'Format ungültig') . ')');
+            appendLog($con, 'import', mb_substr(
+                'Abgelehnte Datei aus Lane entfernt: ' . $name
+                . ' (Format ungültig → _Abgelehnt/)', 0, 255));
         } catch (Throwable) { /* Move steht; Log ist best-effort */ }
         api_json_send(['ok' => true, 'moved' => basename($dest)]);
     } catch (Throwable $e) {
