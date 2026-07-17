@@ -54,4 +54,18 @@ final class CsvFormatTest extends TestCase
         $this->assertStringContainsString('leer', (string) $r['problem']);
         unlink($p);
     }
+
+    public function test_tageswerte_export_wird_als_solcher_benannt(): void
+    {
+        $csv = tempnam(sys_get_temp_dir(), 'tagw-') . '.csv';
+        file_put_contents($csv,
+            "\xEF\xBB\xBFDatum;AT00... - Verbrauch [kWh];;\n" .
+            "01.06.2026;6,699;;\n02.06.2026;9,63;;\n");
+        $f = energie_csv_format_pruefen($csv);
+        @unlink($csv);
+        $this->assertFalse($f['ok']);
+        $this->assertNull($f['zeit_idx']);
+        $this->assertStringContainsString('Tageswerte', $f['problem']);
+        $this->assertStringContainsString('Viertelstundenwerte', $f['problem']);
+    }
 }

@@ -63,11 +63,18 @@ function energie_csv_format_pruefen(string $path): array {
             . " → Trennzeichen scheint „,“ statt „;“.";
         return $out;
     }
-    foreach (['Datum' => $dIdx, 'Zeit von' => $vIdx] as $name => $idx) {
-        if ($idx === false) {
-            $out['problem'] = "Spalte „{$name}“ nicht gefunden. Kopfzeile: " . implode(';', $headers);
-            return $out;
+    if ($dIdx === false) {
+        $out['problem'] = "Spalte „Datum“ nicht gefunden. Kopfzeile: " . implode(';', $headers);
+        return $out;
+    }
+    if ($vIdx === false) {
+        $out['problem'] = "Spalte „Zeit von“ nicht gefunden. Kopfzeile: " . implode(';', $headers);
+        // Datum + Verbrauch vorhanden, nur die Uhrzeit fehlt → klassischer Tageswerte-Export.
+        if ($kIdx !== null) {
+            $out['problem'] .= " — das sieht nach einem Tageswerte-Export aus; der Importer braucht "
+                . "Viertelstundenwerte (Spalte „Zeit von“).";
         }
+        return $out;
     }
     if ($kIdx === null) {
         $out['problem'] = "Verbrauchsspalte (Header mit „Verbrauch“ oder „kWh“) nicht gefunden. Kopfzeile: " . implode(';', $headers);
