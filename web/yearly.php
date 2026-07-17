@@ -23,7 +23,12 @@ $kpi = $stmt->fetch();
 $kpi_kwh = (float)($kpi['kwh'] ?? 0);
 $kpi_eur = (float)($kpi['eur'] ?? 0);
 $kpi_ct  = (float)($kpi['ct']  ?? 0);
-$kpi_eff = $kpi_kwh != 0.0 ? $kpi_eur / $kpi_kwh * 100 : 0.0;
+// Ø effektiv (netto) = verbrauchsgewichteter Spot Σ(kWh×Spot)/Σ kWh über das 12-Monats-Fenster.
+$stmt = $pdo->prepare(
+    "SELECT SUM(spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0)
+     FROM readings WHERE ts >= ? AND ts < DATE_ADD(?, INTERVAL 1 MONTH)");
+$stmt->execute([$start_ymd, $end_ymd]);
+$kpi_eff = (float)$stmt->fetchColumn();
 
 // Navigation
 $prev_month = $month - 1; $prev_year = $year;
@@ -48,9 +53,9 @@ $prev_label = $month_names[$prev_month - 1] . ' ' . $prev_year;
 $api_url    = "$base/api.php?type=yearly&year=$year&month=$month";
 $page_type  = 'yearly';
 
-function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' kWh'; }
-function fmt_eur($v) { return '€ ' . number_format($v, 2, ',', '.'); }
-function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' ct/kWh'; }
+function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' <span class="unit">kWh</span>'; }
+function fmt_eur($v) { return '<span class="unit">€</span> ' . number_format($v, 2, ',', '.'); }
+function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' <span class="unit">ct/kWh</span>'; }
 ?>
 <?php
 $_yearlyHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"'
@@ -101,8 +106,7 @@ render_header($page_type);
         <button type="button" class="chart-pill chart-pill--hkwh"    data-key="hkwh">hist. Verbr.</button>
         <button type="button" class="chart-pill chart-pill--hkband"  data-key="hkband">hist. Verbr. Band</button>
         <button type="button" class="chart-pill chart-pill--tariff"  data-key="tariff">Tarif</button>
-        <button type="button" class="chart-pill chart-pill--htariff" data-key="htariff">hist. Tarif</button>
-        <button type="button" class="chart-pill chart-pill--htband"  data-key="htband">hist. Tarif Band</button>
+        <button type="button" class="chart-pill chart-pill--eff"     data-key="eff" id="btn-eff">Effektiv netto</button>
     </div>
     <div class="chart-container" style="margin-top:1rem">
         <canvas id="chart"></canvas>
@@ -148,20 +152,9 @@ fetch(<?= json_encode($api_url) ?>)
             borderWidth: 2, pointRadius: 3, tension: 0.3, yAxisID: 'y3', order: 0,
           },
           {
-            type: 'line', label: '_htariff_max', data: data.hist_tariff_max,
-            borderColor: 'transparent', backgroundColor: 'rgba(49,130,206,0.13)',
-            pointRadius: 0, fill: '+1', tension: 0.3, yAxisID: 'y3', order: 9,
-          },
-          {
-            type: 'line', label: '_htariff_min', data: data.hist_tariff_min,
-            borderColor: 'transparent', backgroundColor: 'transparent',
-            pointRadius: 0, fill: false, tension: 0.3, yAxisID: 'y3', order: 8,
-          },
-          {
-            type: 'line', label: 'Ø Tarif (ct/kWh)', data: data.hist_tariff_avg,
-            borderColor: '#3182ce', backgroundColor: 'rgba(49,130,206,0.08)',
-            borderWidth: 1.5, pointRadius: 3, tension: 0.3, yAxisID: 'y3', order: 3,
-            borderDash: [5, 3],
+            type: 'line', label: 'Effektiv netto (ct/kWh)', data: data.epex_wgt,
+            borderColor: '#ecc94b', backgroundColor: 'rgba(236,201,75,0.1)',
+            borderWidth: 2, pointRadius: 3, tension: 0.3, yAxisID: 'y3', order: 3,
           },
           {
             type: 'line', label: '_hkwh_max', data: data.hist_kwh_max,
@@ -431,7 +424,7 @@ document.getElementById('print-btn').addEventListener('click', () => {
 // Dataset visibility controls
 (function() {
   const storageKey = 'energie-vis-yearly';
-  const defaults   = { cost: true, kwh: true, tariff: true, htariff: true, htband: true, hkwh: true, hkband: true };
+  const defaults   = { cost: true, kwh: true, tariff: true, eff: true, hkwh: true, hkband: true };
   let vis = Object.assign({}, defaults, JSON.parse(localStorage.getItem(storageKey) || '{}'));
 
   document.querySelectorAll('.chart-controls .chart-pill[data-key]').forEach(btn => {
@@ -444,14 +437,13 @@ document.getElementById('print-btn').addEventListener('click', () => {
       if      (ds.label === 'Kosten (€)')         meta.hidden = !vis.cost;
       else if (ds.label === 'Verbrauch (kWh)')    meta.hidden = !vis.kwh;
       else if (ds.label === 'Tarif (ct/kWh)')     meta.hidden = !vis.tariff;
-      else if (ds.label === 'Ø Tarif (ct/kWh)')   meta.hidden = !vis.htariff;
-      else if (ds.label.startsWith('_htariff'))    meta.hidden = !vis.htband;
+      else if (ds.label === 'Effektiv netto (ct/kWh)') meta.hidden = !vis.eff;
       else if (ds.label === 'Ø Verbrauch (kWh)')  meta.hidden = !vis.hkwh;
       else if (ds.label.startsWith('_hkwh'))       meta.hidden = !vis.hkband;
     });
     chart.options.scales.y.display  = vis.cost;
     chart.options.scales.y2.display = vis.kwh  || vis.hkwh;
-    chart.options.scales.y3.display = vis.tariff || vis.htariff;
+    chart.options.scales.y3.display = vis.tariff || vis.eff;
     if (chart._yMin  != null) chart.options.scales.y.min   = chart._yMin;
     if (chart._yMax  != null) chart.options.scales.y.max   = chart._yMax;
     if (chart._y2Min != null) chart.options.scales.y2.min  = chart._y2Min;

@@ -34,6 +34,11 @@ $api_url      = "$base/api.php?type=monthly&year=$year&month=$month";
 $kpi_kwh      = (float)$summary['kwh'];
 $kpi_eur      = (float)$summary['eur'];
 $kpi_ct       = (float)$summary['ct'];
-$kpi_eff      = $kpi_kwh != 0.0 ? $kpi_eur / $kpi_kwh * 100 : 0.0;
+// Ø effektiv (netto) = verbrauchsgewichteter Spot Σ(kWh×Spot)/Σ kWh über die Periode.
+$stmt = $pdo->prepare(
+    "SELECT SUM(spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0)
+     FROM readings WHERE YEAR(ts) = ? AND MONTH(ts) = ?");
+$stmt->execute([$year, $month]);
+$kpi_eff      = (float)$stmt->fetchColumn();
 
 require __DIR__ . '/../inc/_chart_page.php';

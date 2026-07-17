@@ -37,9 +37,9 @@ $month = $stmt->fetch();
 $prev_month = (int)$month['m'];
 $prev_year  = (int)$month['y'];
 
-function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' kWh'; }
-function fmt_eur($v) { return '€ ' . number_format($v, 2, ',', '.'); }
-function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
+function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' <span class="unit">kWh</span>'; }
+function fmt_eur($v) { return '<span class="unit">€</span> ' . number_format($v, 2, ',', '.'); }
+function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' <span class="unit">ct/kWh</span>'; }
 function kpi_eff($eur, $kwh) { return $kwh != 0.0 ? $eur / $kwh * 100 : 0.0; }
 ?>
 <?php render_page_head('Energie'); render_header('index'); ?>

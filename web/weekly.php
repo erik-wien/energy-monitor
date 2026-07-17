@@ -38,6 +38,11 @@ $api_url      = "$base/api.php?type=weekly&year=$year&week=$week";
 $kpi_kwh      = (float)$summary['kwh'];
 $kpi_eur      = (float)$summary['eur'];
 $kpi_ct       = (float)$summary['ct'];
-$kpi_eff      = $kpi_kwh != 0.0 ? $kpi_eur / $kpi_kwh * 100 : 0.0;
+// Ø effektiv (netto) = verbrauchsgewichteter Spot Σ(kWh×Spot)/Σ kWh über die Periode.
+$stmt = $pdo->prepare(
+    "SELECT SUM(spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0)
+     FROM readings WHERE YEAR(ts) = ? AND WEEK(ts, 3) = ?");
+$stmt->execute([$year, $week]);
+$kpi_eff      = (float)$stmt->fetchColumn();
 
 require __DIR__ . '/../inc/_chart_page.php';

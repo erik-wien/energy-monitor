@@ -36,6 +36,11 @@ $api_url      = $base . '/api.php?type=daily&date=' . $date;
 $kpi_kwh      = (float)$summary['consumed_kwh'];
 $kpi_eur      = (float)$summary['cost_brutto'];
 $kpi_ct       = (float)$summary['avg_spot_ct'];
-$kpi_eff      = $kpi_kwh != 0.0 ? $kpi_eur / $kpi_kwh * 100 : 0.0;
+// Ø effektiv (netto) = verbrauchsgewichteter Spot Σ(kWh×Spot)/Σ kWh des Tages.
+$stmt = $pdo->prepare(
+    "SELECT SUM(spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0)
+     FROM readings WHERE DATE(ts) = ?");
+$stmt->execute([$date]);
+$kpi_eff      = (float)$stmt->fetchColumn();
 
 require __DIR__ . '/../inc/_chart_page.php';

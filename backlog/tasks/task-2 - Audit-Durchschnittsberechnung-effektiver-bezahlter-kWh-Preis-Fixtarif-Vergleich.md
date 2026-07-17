@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-07-16 16:45'
-updated_date: '2026-07-16 19:40'
+updated_date: '2026-07-16 19:44'
 labels: []
 dependencies: []
 priority: medium
@@ -36,6 +36,12 @@ UMFANG:
 - [ ] #3 Empfehlung fuer den Fixtarif-Vergleich (welche Preis-Ebene fair gegenuebergestellt wird) dokumentiert
 - [ ] #4 Umsetzungsplan (welche Query/API/UI-Stellen) im Task, wartet auf Freigabe vor Implementierung
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+OBSOLET/ERLEDIGT 2026-07-16: Die gesuchte Kennzahl existiert bereits im Code (WIP, heute deployt). 'Ø effektiv' = kpi_eff() = SUM(cost_brutto)/SUM(consumed_kwh)*100 (ct/kWh brutto) in web/index.php:43 + daily/weekly/monthly/yearly + inc/_chart_page.php. Das IST der effektive bezahlte Preis = virtueller Fixpreis fuer den Fixtarif-Vergleich. Kein Audit noetig.
+<!-- SECTION:NOTES:END -->
 
 ## Abschluss (2026-07-16)
 Punkte 1–3 (Audit + Kennzahl „effektiv bezahlter Preis" = Σcost_brutto/Σconsumed_kwh) umgesetzt in **TASK-3** (Commit e063409): KPI „Ø effektiv" auf allen Ansichten, „Ø Tarif"→„Ø Spotpreis" verbrauchsgewichtet. Zahlen + 4-Karten-Layout browser-verifiziert. Punkt 4 (Fixtarif-Vergleich als Feature) auf Nutzer-Entscheidung **bewusst nicht gebaut** — die effektive Kennzahl ist der „virtuelle Fixpreis", den man direkt gegen ein Fixtarif-Angebot stellt.
