@@ -42,3 +42,4 @@ update.md
 # Generated SVG assets (regenerated on deploy via mcp/generate.py)
 web/jardyx-logo.svg
 web/jardyx-favicon.svg
+data/wetterbericht.json
