@@ -330,11 +330,8 @@ function render_header(string $page_type): void
             }
         }
 
-        importBtn.addEventListener('click', e => {
-            e.stopPropagation();
-            importBtn.textContent = 'Lade Vorschau\u2026';
-            importBtn.disabled    = true;
-            _apiJson('preview-import')
+        function _ladeVorschau() {
+            return _apiJson('preview-import')
                 .then(d => {
                     importBtn.textContent = importLabel;
                     importBtn.disabled    = false;
@@ -347,7 +344,9 @@ function render_header(string $page_type): void
                         impFormatWarn.hidden    = false;
                         impFormatWarn.innerHTML = 'Format gepr\u00fcft \u2014 ' + bad.length +
                             ' Datei(en) sehen anders aus als erwartet:<ul>' +
-                            bad.map(f => '<li>' + escapeHtml(f.name) + ': ' + escapeHtml(f.problem || 'unbekannt') + '</li>').join('') +
+                            bad.map(f => '<li>' + escapeHtml(f.name) + ': ' + escapeHtml(f.problem || 'unbekannt') +
+                                ' <button type="button" class="btn btn-sm btn-outline-danger" data-discard="' +
+                                escapeHtml(f.name) + '">Aus Import entfernen</button></li>').join('') +
                             '</ul>';
                         impConfirm.disabled = true;
                     } else {
@@ -355,14 +354,41 @@ function render_header(string $page_type): void
                         impConfirm.disabled  = false;
                     }
                     impConfirm.textContent = 'Importieren';
-                    importDialog.showModal();
-                })
+                    if (!importDialog.open) importDialog.showModal();
+                });
+        }
+
+        importBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            importBtn.textContent = 'Lade Vorschau\u2026';
+            importBtn.disabled    = true;
+            _ladeVorschau()
                 .catch(e => {
                     importBtn.textContent = importLabel;
                     importBtn.disabled    = false;
                     sessionStorage.setItem('importResult', JSON.stringify(_httpFehler(e)));
                     location.reload();
                 });
+        });
+
+        impFormatWarn.addEventListener('click', async (e) => {
+            const btn = e.target.closest('button[data-discard]');
+            if (!btn) return;
+            const name = btn.getAttribute('data-discard');
+            btn.disabled = true;
+            btn.textContent = 'Entferne\u2026';
+            try {
+                await _apiJson('import-discard', 'file=' + encodeURIComponent(name));
+                await _ladeVorschau();   // Liste + Confirm-Status frisch aufbauen (kein Reload)
+            } catch (err) {
+                // Es gibt KEIN showAlert in dieser Datei. Fehler sichtbar in der bereits
+                // eingeblendeten Warn-Box anh\u00e4ngen (Regel \u00a721: kein stiller Fehlschlag).
+                btn.disabled = false;
+                btn.textContent = 'Aus Import entfernen';
+                const fehler = _httpFehler(err).error || 'Entfernen fehlgeschlagen.';
+                impFormatWarn.insertAdjacentHTML('beforeend',
+                    '<p role="alert" style="margin:.5rem 0 0">' + escapeHtml(fehler) + '</p>');
+            }
         });
 
         impCancel.addEventListener('click', () => {
