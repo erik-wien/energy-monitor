@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\TestCase;
 require_once __DIR__ . '/../../inc/ai_client.php';
+require_once __DIR__ . '/../../inc/wetter.php';
 
 /**
  * Tests for inc/ai_client.php — Haiku-Formulierungs-Client des Dashboard-
@@ -106,15 +107,25 @@ final class AiClientTest extends TestCase {
         $decoded = json_decode($captured['body'], true);
         $this->assertIsArray($decoded);
         $this->assertSame('claude-haiku-4-5-20251001', $decoded['model']);
-        $this->assertSame(200, $decoded['max_tokens']);
-        $this->assertStringContainsString('nichts erfinden', $decoded['system']);
+        $this->assertSame(300, $decoded['max_tokens']);
+        $this->assertStringContainsString('Formuliere ihn freundlicher', $decoded['system']);
 
-        // User-Content = json_encode($fakten) als String
+        // User-Content = der deterministische Template-Text aus
+        // en_wetter_template($fakten) — NIE die rohen Fakten/Zahlen als JSON.
         $userContent = $decoded['messages'][0]['content'];
         $this->assertIsString($userContent);
-        // assertEquals (nicht assertSame): der JSON-Roundtrip macht aus
-        // ganzzahligen Floats (100.0) wieder int (100) — Werte bleiben gleich.
-        $faktenDecoded = json_decode($userContent, true);
-        $this->assertEquals(self::FAKTEN, $faktenDecoded);
+        $this->assertSame(en_wetter_template(self::FAKTEN), $userContent);
+    }
+
+    public function test_en_ai_saeubern_entfernt_markdown_ueberschrift_und_emoji(): void {
+        $roh = "# Wetterbericht\nHeute wird's günstig ☀️ und sonnig!";
+
+        $bereinigt = en_ai_saeubern($roh);
+
+        $this->assertStringNotContainsString('#', $bereinigt);
+        $this->assertStringNotContainsString('☀️', $bereinigt);
+        $this->assertStringNotContainsString('☀', $bereinigt);
+        $this->assertStringContainsString("Heute wird's günstig", $bereinigt);
+        $this->assertStringContainsString('und sonnig!', $bereinigt);
     }
 }

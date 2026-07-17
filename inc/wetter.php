@@ -198,7 +198,7 @@ function en_wetter_template(array $fakten): string {
         $avgTxt = number_format($avg, 1, ',', '.');
         if ($max !== null && $maxH !== null) {
             $maxTxt = number_format($max, 1, ',', '.');
-            $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh, mit einer Spitze um {$maxH} Uhr ({$maxTxt} ct).";
+            $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh, mit einer Spitze um {$maxH} Uhr ({$maxTxt} ct/kWh).";
         } else {
             $saetze[] = "Heute liegt der Strompreis im Schnitt bei {$avgTxt} ct/kWh.";
         }
@@ -209,7 +209,7 @@ function en_wetter_template(array $fakten): string {
     $gAvg = $fakten['heute']['guenstig_avg']  ?? null;
     if ($von !== null && $bis !== null && $gAvg !== null) {
         $gTxt = number_format($gAvg, 1, ',', '.');
-        $saetze[] = "Am günstigsten ist es zwischen {$von} und {$bis} Uhr (Ø {$gTxt} ct).";
+        $saetze[] = "Am günstigsten ist es zwischen {$von} und {$bis} Uhr (Ø {$gTxt} ct/kWh).";
     }
 
     if (!$saetze) {

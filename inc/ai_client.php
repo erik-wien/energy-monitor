@@ -2,15 +2,32 @@
 declare(strict_types=1);
 
 /**
- * inc/ai_client.php — Haiku-Formulierungs-Client für den Dashboard-„Wetterbericht"
+ * inc/ai_client.php — Haiku-Veredelungs-Client für den Dashboard-„Wetterbericht"
  * (s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md §2/§6).
- * Formuliert NUR aus den von inc/wetter.php gelieferten Fakten; Fehler/Timeout/
- * fehlender Key → null (Aufrufer fällt dann auf en_wetter_template() zurück).
+ * Haiku bekommt NIE die rohen Fakten (JSON/Zahlen) — nur den bereits fertig
+ * formatierten Template-Satz aus en_wetter_template() (inc/wetter.php), den es
+ * sprachlich veredelt. Das verhindert Einheiten-Verwechslungen (z. B. ct/kWh-Preis
+ * fälschlich als „Kilowattstunden verbraucht" vorgelesen) und Zahlensalat, weil
+ * das Modell schlicht keine Rohzahlen mehr sieht, aus denen es welche erfinden
+ * könnte. Fehler/Timeout/fehlender Key → null (Aufrufer fällt dann auf
+ * en_wetter_template() zurück).
  */
 
-const EN_AI_SYSTEM_PROMPT = 'Du schreibst einen kurzen, freundlichen deutschen '
-    . 'Strom-Wetterbericht (2–4 Sätze) NUR aus den gegebenen Fakten — nichts '
-    . 'erfinden, nicht rechnen, keine Zahlen ändern.';
+require_once __DIR__ . '/wetter.php';
+
+const EN_AI_SYSTEM_PROMPT = 'Hier ist ein Strom-Wetterbericht in nüchterner '
+    . 'Rohform. Formuliere ihn freundlicher und flüssiger (2–4 Sätze), OHNE '
+    . 'Zahlen, Einheiten oder Fakten zu ändern oder hinzuzufügen. Reiner '
+    . 'Fließtext: kein Markdown, keine Überschriften, keine Emojis.';
+
+/** §11-Absicherung: entfernt Markdown-Überschriften/-Reste und Emojis, falls
+ *  das Modell die Prompt-Vorgabe ignoriert. Reiner Text bleibt erhalten. */
+function en_ai_saeubern(string $t): string {
+    $t = preg_replace('/^\s*#{1,6}\s+.*$/m', '', $t);            // Markdown-Überschriften
+    $t = preg_replace('/[*_`]{1,3}/', '', $t);                   // Fett/Kursiv/Code-Marker
+    $t = preg_replace('/[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}\x{2190}-\x{21FF}]/u', '', $t); // Emoji/Symbole
+    return trim(preg_replace('/\n{2,}/', "\n", $t));
+}
 
 /**
  * en_haiku_wetter() — lässt Haiku den übergebenen Fakten-Block in einen kurzen
@@ -36,15 +53,17 @@ function en_haiku_wetter(array $fakten, array $cfg, ?callable $http = null): ?st
     $url   = (string) ($cfg['url']   ?? '');
     $model = (string) ($cfg['model'] ?? '');
 
-    $factsJson = json_encode($fakten, JSON_UNESCAPED_UNICODE);
-    if ($factsJson === false) return null;
+    // Basistext = die bereits korrekte, Einheiten-sichere Template-Formulierung
+    // (inc/wetter.php) — das ist es, was Haiku sieht und veredelt, NIE die
+    // rohen Fakten/Zahlen selbst.
+    $basisText = en_wetter_template($fakten);
 
     $body = json_encode([
         'model'      => $model,
-        'max_tokens' => 200,
+        'max_tokens' => 300,
         'system'     => EN_AI_SYSTEM_PROMPT,
         'messages'   => [
-            ['role' => 'user', 'content' => $factsJson],
+            ['role' => 'user', 'content' => $basisText],
         ],
     ], JSON_UNESCAPED_UNICODE);
     if ($body === false) return null;
@@ -69,7 +88,9 @@ function en_haiku_wetter(array $fakten, array $cfg, ?callable $http = null): ?st
     if (!is_array($data)) return null;
 
     $text = $data['content'][0]['text'] ?? null;
-    return is_string($text) && $text !== '' ? $text : null;
+    if (!is_string($text) || $text === '') return null;
+    $text = en_ai_saeubern($text);
+    return $text !== '' ? $text : null;
 }
 
 /** Default-HTTP: curl-POST gegen die Anthropic Messages-API. */
