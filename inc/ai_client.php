@@ -93,7 +93,15 @@ function en_haiku_wetter(array $fakten, array $cfg, ?callable $http = null): ?st
     $text = $data['content'][0]['text'] ?? null;
     if (!is_string($text) || $text === '') return null;
     $text = en_ai_saeubern($text);
-    return $text !== '' ? $text : null;
+    if ($text === '') return null;
+
+    // Der „gestrige Werte fehlen"-Hinweis ist eine harte Anforderung, aber Haiku
+    // lässt ihn (als „unwichtig") gern weg. Deterministisch anhängen, wenn die
+    // Auswertung nicht aktuell ist und das Modell ihn nicht ohnehin schon nennt.
+    if (($fakten['stand']['aktuell'] ?? true) === false && stripos($text, 'laden') === false) {
+        $text = rtrim($text) . ' Hinweis: noch nicht ganz aktuell — bitte die gestrigen Werte laden.';
+    }
+    return $text;
 }
 
 /** Default-HTTP: curl-POST gegen die Anthropic Messages-API. */

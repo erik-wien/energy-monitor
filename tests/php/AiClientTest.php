@@ -52,6 +52,34 @@ final class AiClientTest extends TestCase {
         $this->assertSame('Ein ruhiger Stromtag.', $text);
     }
 
+    public function test_hinweis_wird_deterministisch_angehaengt_wenn_nicht_aktuell(): void {
+        // Haiku lässt den „gestrige Werte fehlen"-Hinweis gern weg; bei
+        // stand.aktuell=false muss er trotzdem im Text landen.
+        $fakten = self::FAKTEN;
+        $fakten['stand']['aktuell'] = false;
+        $http = fn(string $url, array $headers, string $bodyJson): array => [
+            'status' => 200,
+            'body'   => json_encode(['content' => [['type' => 'text', 'text' => 'Heute wird der Strom teuer.']]]),
+        ];
+
+        $text = en_haiku_wetter($fakten, self::CFG, $http);
+
+        $this->assertStringContainsString('bitte die gestrigen Werte laden', $text);
+    }
+
+    public function test_hinweis_nicht_doppelt_wenn_modell_ihn_schon_nennt(): void {
+        $fakten = self::FAKTEN;
+        $fakten['stand']['aktuell'] = false;
+        $http = fn(string $url, array $headers, string $bodyJson): array => [
+            'status' => 200,
+            'body'   => json_encode(['content' => [['type' => 'text', 'text' => 'Bitte die gestrigen Werte laden.']]]),
+        ];
+
+        $text = en_haiku_wetter($fakten, self::CFG, $http);
+
+        $this->assertSame(1, substr_count(mb_strtolower($text), 'laden'));
+    }
+
     public function test_http_500_liefert_null(): void {
         $http = fn(string $url, array $headers, string $bodyJson): array
             => ['status' => 500, 'body' => 'Internal Server Error'];
