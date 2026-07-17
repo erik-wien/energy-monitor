@@ -134,7 +134,6 @@ function en_wetter_chip(string $label, string $href, ?array $delta = null, strin
 }
 
 $wetterMonthlyHref = $base . '/monthly.php?year=' . $prev_year . '&month=' . $prev_month;
-$wetterDailyHref   = $base . '/daily.php?date=' . htmlspecialchars($w['datum']);
 
 $wetterChips = [];
 
@@ -147,26 +146,31 @@ if ($yoy !== null) {
 }
 
 // Im Vorschau-Slot (#nach, morgen) trägt das Preisprofil Morgen-Zahlen — Chip
-// entsprechend beschriften.
+// entsprechend beschriften UND aus dem Morgen-Profil speisen (sonst zeigten
+// die Preis-Chips im Vorschau-Slot fälschlich Heute-Zahlen unter "morgen"-Label).
 $wetterTagWort = ($wf['vorschau'] ?? false) ? 'morgen' : 'heute';
+$profil = ($wf['vorschau'] ?? false)
+    ? ($wf['preis']['morgen'] ?? $wf['preis']['heute'] ?? null)
+    : ($wf['preis']['heute'] ?? null);
 
-// v2-Fakten: Profil liegt unter preis.heute (statt vormals heute direkt).
-$wetterHeuteProfil = $wf['preis']['heute'] ?? null;
+// Chip-Link zeigt auf den tatsächlichen Profil-Tag (heute bzw. im
+// Vorschau-Fall morgen), nicht auf $w['datum'] (= gestern).
+$wetterDailyHref = $base . '/daily.php?date=' . htmlspecialchars($profil['datum'] ?? $w['datum']);
 
-$hAvg = $wetterHeuteProfil['avg'] ?? null;
+$hAvg = $profil['avg'] ?? null;
 if ($hAvg !== null) {
     $wetterChips[] = en_wetter_chip($wetterTagWort . ' Ø', $wetterDailyHref, null, number_format($hAvg, 1, ',', '.') . ' ct');
 }
 
-$hMax = $wetterHeuteProfil['max'] ?? null;
-$hMaxH = $wetterHeuteProfil['max_h'] ?? null;
+$hMax = $profil['max'] ?? null;
+$hMaxH = $profil['max_h'] ?? null;
 if ($hMax !== null && $hMaxH !== null) {
     $wetterChips[] = en_wetter_chip('Spitze ' . $hMaxH . ' h', $wetterDailyHref, null, number_format($hMax, 1, ',', '.') . ' ct');
 }
 
-$gVon = $wetterHeuteProfil['guenstig_von'] ?? null;
-$gBis = $wetterHeuteProfil['guenstig_bis'] ?? null;
-$gAvg = $wetterHeuteProfil['guenstig_avg'] ?? null;
+$gVon = $profil['guenstig_von'] ?? null;
+$gBis = $profil['guenstig_bis'] ?? null;
+$gAvg = $profil['guenstig_avg'] ?? null;
 if ($gVon !== null && $gBis !== null && $gAvg !== null) {
     $wetterChips[] = en_wetter_chip('günstig ' . $gVon . '–' . $gBis . ' h', $wetterDailyHref, null, number_format($gAvg, 1, ',', '.') . ' ct');
 }

@@ -2,10 +2,13 @@
 declare(strict_types=1);
 
 /**
- * inc/wetter.php — deterministische Fakten-Engine für den Dashboard-„Wetterbericht"
- * (Verbrauch 30 T vs. Baseline, Lastdisziplin, heutiges Spotprofil) + Template-Fallback.
+ * inc/wetter.php — deterministische Fakten-Engine für den Dashboard-„Wetterbericht" (v2):
+ * Verbrauch (verankert auf gestern) vs. Vorjahr/üblich, Starkverbraucher-Läufe
+ * (Lastdisziplin), heutiges (+ ggf. morgiges) Spot-Preisprofil, Preis-Block
+ * und Faktenblatt für den Haiku-Analysten + Template-Fallback.
  * Reine/DB-testbare Funktionen, keine LLM-Abhängigkeit
- * (s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md §1).
+ * (s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md §1 und
+ * docs/superpowers/specs/2026-07-17-wetterbericht-v2-analyst.md §2/§3).
  * en_wetter_regenerieren() (§3, weiter unten) formuliert per Haiku und braucht
  * daher inc/ai_client.php.
  */
@@ -25,8 +28,8 @@ require_once __DIR__ . '/ai_client.php';
  *
  * @return array{
  *   stand: array{gestern: string, heute: string, morgen: ?string, aktuell: bool},
- *   verbrauch: array{gestern_kwh: ?float, w7_kwh: float, w7_vorjahr_kwh: ?float,
- *              w7_yoy_pct: ?float, d30_kwh: float, d30_ueblich_kwh: ?float,
+ *   verbrauch: array{gestern_kwh: ?float, w7_kwh: ?float, w7_vorjahr_kwh: ?float,
+ *              w7_yoy_pct: ?float, d30_kwh: ?float, d30_ueblich_kwh: ?float,
  *              d30_delta_pct: ?float, trend: ?string},
  *   disziplin: array{laeufe: array, bewertung: ?string},
  *   preis: array{heute: array, morgen: ?array, heute_vs_ueblich_pct: ?float,
@@ -80,8 +83,10 @@ function en_wetter_sum_fenster(PDO $pdo, string $start, string $ende): ?float {
  * Verbrauchs-Kennzahlenblock, verankert auf $gestern (Spec §2): gestriger
  * Verbrauch, Woche/Monat (bis inkl. $gestern) je mit Vorjahresvergleich bzw.
  * Mehrjahr-„üblich"-Schnitt (2024+2025), sowie 30-Tage-Trend ggü. den 30 Tagen
- * davor. Alle Vergleichswerte sind null, wenn die entsprechende Historie fehlt
- * (nie 0/Fehler).
+ * davor. w7_kwh/d30_kwh sind null, wenn das jeweilige Fenster keine Zeilen
+ * enthält (kein Verbrauch != kein Datum); alle abgeleiteten Vergleichswerte
+ * (yoy/delta/trend) sind ebenfalls null, wenn die entsprechende Historie
+ * fehlt (nie 0/Fehler).
  */
 function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
     $stmt = $pdo->prepare("SELECT consumed_kwh FROM daily_summary WHERE day = ?");
@@ -92,7 +97,7 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
     $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 7 DAY)");
     $stmt->execute([$gestern]);
     $w7Start = $stmt->fetchColumn();
-    $w7Kwh   = en_wetter_sum_fenster($pdo, $w7Start, $gestern) ?? 0.0;
+    $w7Kwh   = en_wetter_sum_fenster($pdo, $w7Start, $gestern);
 
     $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 1 YEAR)");
     $stmt->execute([$gestern]);
@@ -102,14 +107,14 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
     $w7VorjahrStart = $stmt->fetchColumn();
     $w7VorjahrKwh   = en_wetter_sum_fenster($pdo, $w7VorjahrStart, $w7VorjahrEnde);
 
-    $w7YoyPct = ($w7VorjahrKwh !== null && $w7VorjahrKwh != 0.0)
+    $w7YoyPct = ($w7Kwh !== null && $w7VorjahrKwh !== null && $w7VorjahrKwh != 0.0)
         ? ($w7Kwh / $w7VorjahrKwh - 1.0)
         : null;
 
     $stmt = $pdo->prepare("SELECT DATE_SUB(?, INTERVAL 30 DAY)");
     $stmt->execute([$gestern]);
     $d30Start = $stmt->fetchColumn();
-    $d30Kwh   = en_wetter_sum_fenster($pdo, $d30Start, $gestern) ?? 0.0;
+    $d30Kwh   = en_wetter_sum_fenster($pdo, $d30Start, $gestern);
 
     $ueblichWerte = [];
     foreach ([1, 2] as $jahre) {
@@ -124,7 +129,7 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
     }
     $d30Ueblich = $ueblichWerte ? array_sum($ueblichWerte) / count($ueblichWerte) : null;
 
-    $d30DeltaPct = ($d30Ueblich !== null && $d30Ueblich != 0.0)
+    $d30DeltaPct = ($d30Kwh !== null && $d30Ueblich !== null && $d30Ueblich != 0.0)
         ? ($d30Kwh / $d30Ueblich - 1.0)
         : null;
 
@@ -134,7 +139,7 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
     $vorBlockSum   = en_wetter_sum_fenster($pdo, $vorBlockStart, $d30Start);
 
     $trend = null;
-    if ($vorBlockSum !== null && $vorBlockSum != 0.0) {
+    if ($d30Kwh !== null && $vorBlockSum !== null && $vorBlockSum != 0.0) {
         $trendPct = $d30Kwh / $vorBlockSum - 1.0;
         if ($trendPct > EN_TREND_SCHWELLE) {
             $trend = 'steigend';
@@ -665,8 +670,8 @@ function en_wetter_fakten_leer(): array {
     return [
         'stand'     => ['gestern' => $gestern, 'heute' => $heute, 'morgen' => null, 'aktuell' => false],
         'verbrauch' => [
-            'gestern_kwh' => null, 'w7_kwh' => 0.0, 'w7_vorjahr_kwh' => null, 'w7_yoy_pct' => null,
-            'd30_kwh' => 0.0, 'd30_ueblich_kwh' => null, 'd30_delta_pct' => null, 'trend' => null,
+            'gestern_kwh' => null, 'w7_kwh' => null, 'w7_vorjahr_kwh' => null, 'w7_yoy_pct' => null,
+            'd30_kwh' => null, 'd30_ueblich_kwh' => null, 'd30_delta_pct' => null, 'trend' => null,
         ],
         'disziplin' => ['laeufe' => [], 'bewertung' => null],
         'preis'     => [
@@ -688,7 +693,12 @@ function en_wetter_slot(DateTimeImmutable $now): string {
     return $now->format('Y-m-d') . ((int) $now->format('H') < 14 ? '#vor' : '#nach');
 }
 
-/** Liest+validiert den Cache; null wenn Datei fehlt oder Inhalt unbrauchbar ist. */
+/**
+ * Liest+validiert den Cache; null wenn Datei fehlt oder Inhalt unbrauchbar ist.
+ * Reicht die top-level 'stand'/'symbol'-Felder durch, wenn vorhanden (von
+ * en_wetter_regenerieren() geschrieben, s. dort) — Alt-Caches ohne diese
+ * Felder liefern sie einfach nicht mit (kein Fehler).
+ */
 function en_wetter_cache_lesen(string $path): ?array {
     $raw = @file_get_contents($path);
     if ($raw === false) return null;
@@ -697,7 +707,7 @@ function en_wetter_cache_lesen(string $path): ?array {
     if (!is_array($data)) return null;
     if (!isset($data['datum'], $data['fakten'], $data['text'], $data['quelle'], $data['erzeugt_at'])) return null;
 
-    return [
+    $cache = [
         'datum'      => (string) $data['datum'],
         // 'slot' fehlt in Alt-Caches (vor TASK-6) — '' weicht garantiert von
         // jedem echten Slot ab, löst also einmalig eine Regeneration aus.
@@ -707,6 +717,10 @@ function en_wetter_cache_lesen(string $path): ?array {
         'quelle'     => (string) $data['quelle'],
         'erzeugt_at' => (string) $data['erzeugt_at'],
     ];
+    if (isset($data['stand']))  $cache['stand']  = (array) $data['stand'];
+    if (isset($data['symbol'])) $cache['symbol'] = (string) $data['symbol'];
+
+    return $cache;
 }
 
 /** Schreibt den Cache atomar (tmp-Datei im selben Verzeichnis + rename). */

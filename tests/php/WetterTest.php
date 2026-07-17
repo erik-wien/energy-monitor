@@ -71,10 +71,10 @@ final class WetterTest extends TestCase {
         $fakten = en_wetter_verbrauch($this->pdo, '2026-07-16');
 
         $this->assertNull($fakten['gestern_kwh']);
-        $this->assertEqualsWithDelta(0.0, $fakten['w7_kwh'], 0.001);
+        $this->assertNull($fakten['w7_kwh']);
         $this->assertNull($fakten['w7_vorjahr_kwh']);
         $this->assertNull($fakten['w7_yoy_pct']);
-        $this->assertEqualsWithDelta(0.0, $fakten['d30_kwh'], 0.001);
+        $this->assertNull($fakten['d30_kwh']);
         $this->assertNull($fakten['d30_ueblich_kwh']);
         $this->assertNull($fakten['d30_delta_pct']);
         $this->assertNull($fakten['trend']);
@@ -347,6 +347,22 @@ final class WetterTest extends TestCase {
         $this->assertStringNotContainsString('Hinweis', $blatt);
     }
 
+    public function test_faktenblatt_ohne_verbrauchsfenster_keine_0_kwh_zeile(): void {
+        // Finding 2: fehlende 7-/30-Tage-Fenster lieferten früher fälschlich
+        // 0.0 statt null -> "Verbrauch letzte 7/30 Tage: 0,0 kWh (üblich: ...,
+        // -100 %)" im Faktenblatt, obwohl schlicht keine Daten vorliegen.
+        $verbrauch = en_wetter_verbrauch($this->pdo, '2026-07-16'); // keine Historie geseedet
+        $fakten = en_wetter_fakten_leer();
+        $fakten['verbrauch'] = $verbrauch;
+
+        $blatt = en_wetter_faktenblatt($fakten);
+
+        $this->assertStringNotContainsString('0,0 kWh', $blatt);
+        $this->assertStringNotContainsString('-100 %', $blatt);
+        $this->assertStringNotContainsString('Verbrauch letzte 7 Tage', $blatt);
+        $this->assertStringNotContainsString('Verbrauch letzte 30 Tage', $blatt);
+    }
+
     // ── en_wetter_symbol ─────────────────────────────────────────────────────
 
     public function test_symbol_sonne_wenn_max_bis_1_4x_avg(): void {
@@ -563,6 +579,50 @@ final class WetterTest extends TestCase {
         $this->assertNotSame('', $result['text']);
         $this->assertNull($result['fakten']['disziplin']['bewertung']);
         $this->assertSame([], $result['fakten']['disziplin']['laeufe']);
+    }
+
+    // ── en_wetter_cache_lesen (Finding 4: top-level stand/symbol durchreichen) ──
+
+    public function test_cache_lesen_reicht_stand_und_symbol_durch(): void {
+        $path = $this->tmpCachePfad();
+        mkdir(dirname($path), 0755, true);
+        $vorhanden = [
+            'datum'      => '2026-07-16',
+            'slot'       => '2026-07-16#nach',
+            'stand'      => ['gestern' => '2026-07-16', 'heute' => '2026-07-17', 'morgen' => null, 'aktuell' => true],
+            'symbol'     => 'sonne',
+            'fakten'     => ['irrelevant' => true],
+            'text'       => 'Text.',
+            'quelle'     => 'haiku',
+            'erzeugt_at' => '2026-07-16T08:00:00+00:00',
+        ];
+        file_put_contents($path, json_encode($vorhanden, JSON_UNESCAPED_UNICODE));
+
+        $result = en_wetter_cache_lesen($path);
+
+        $this->assertSame($vorhanden['stand'], $result['stand']);
+        $this->assertSame('sonne', $result['symbol']);
+    }
+
+    public function test_cache_lesen_alt_cache_ohne_stand_symbol_bleibt_ok(): void {
+        // Alt-Cache (vor TASK-6/Finding 4) ohne 'stand'/'symbol' -> weiterhin
+        // lesbar, die Felder fehlen einfach (kein Fehler, kein null-Füllwert).
+        $path = $this->tmpCachePfad();
+        mkdir(dirname($path), 0755, true);
+        $altCache = [
+            'datum'      => '2026-07-16',
+            'slot'       => '2026-07-16#nach',
+            'fakten'     => ['irrelevant' => true],
+            'text'       => 'Text.',
+            'quelle'     => 'haiku',
+            'erzeugt_at' => '2026-07-16T08:00:00+00:00',
+        ];
+        file_put_contents($path, json_encode($altCache, JSON_UNESCAPED_UNICODE));
+
+        $result = en_wetter_cache_lesen($path);
+
+        $this->assertArrayNotHasKey('stand', $result);
+        $this->assertArrayNotHasKey('symbol', $result);
     }
 
     // ── en_wetter_slot / Budget (TASK-6: max. 2 Haiku-Aufrufe/Tag) ───────────
