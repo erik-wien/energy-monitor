@@ -19,10 +19,23 @@ final class WetterTest extends TestCase {
 
     private ?PDO $pdo = null;
 
+    private ?string $tmpCachePath = null;
+
     protected function setUp(): void {
         $this->pdo = $this->connectTestDb();
         $this->applySchema();
         $this->truncateAll();
+    }
+
+    protected function tearDown(): void {
+        if ($this->tmpCachePath !== null) {
+            $dir = dirname($this->tmpCachePath);
+            @unlink($this->tmpCachePath);
+            foreach (glob($dir . '/*.tmp*') ?: [] as $leftover) {
+                @unlink($leftover);
+            }
+            @rmdir($dir);
+        }
     }
 
     // ── en_wetter_verbrauch / en_wetter_fakten ──────────────────────────────
@@ -140,6 +153,83 @@ final class WetterTest extends TestCase {
         $this->assertArrayHasKey('disziplin', $fakten);
         $this->assertArrayHasKey('heute', $fakten);
         $this->assertSame('2026-07-17', $fakten['heute']['datum']);
+    }
+
+    // ── en_wetter_lesen / en_wetter_regenerieren (Cache + Off-Path, Spec §3) ──
+    //
+    // $pdo/$cachePath sind bei beiden Funktionen injizierbar (Default: globales
+    // $pdo bzw. der echte data/wetterbericht.json-Pfad) — hier immer ein
+    // frischer Temp-Pfad, damit kein echter Cache berührt wird.
+
+    private function tmpCachePfad(): string {
+        $dir = sys_get_temp_dir() . '/wetter_test_' . uniqid('', true);
+        $this->tmpCachePath = $dir . '/wetterbericht.json';
+        return $this->tmpCachePath;
+    }
+
+    public function test_lesen_ohne_cache_liefert_frisches_template(): void {
+        $path = $this->tmpCachePfad(); // Datei existiert bewusst nicht.
+        $this->seedTag('2026-07-01', 10.0, 12.0);
+
+        $result = en_wetter_lesen($this->pdo, $path);
+
+        $this->assertSame('template', $result['quelle']);
+        $this->assertArrayHasKey('verbrauch', $result['fakten']);
+        $this->assertArrayHasKey('disziplin', $result['fakten']);
+        $this->assertArrayHasKey('heute', $result['fakten']);
+        $this->assertNotSame('', $result['text']);
+        $this->assertIsString($result['datum']);
+        $this->assertIsString($result['erzeugt_at']);
+    }
+
+    public function test_lesen_mit_vorhandenem_cache_liefert_ihn_unveraendert(): void {
+        $path = $this->tmpCachePfad();
+        mkdir(dirname($path), 0755, true);
+        $vorhanden = [
+            'datum'      => '2026-07-16',
+            'fakten'     => ['verbrauch' => ['ist_kwh' => 1.0, 'basis_kwh' => 2.0, 'delta_pct' => -0.5]],
+            'text'       => 'Gestriger Bericht.',
+            'quelle'     => 'haiku',
+            'erzeugt_at' => '2026-07-16T08:00:00+00:00',
+        ];
+        file_put_contents($path, json_encode($vorhanden, JSON_UNESCAPED_UNICODE));
+
+        // $pdo wird nicht gebraucht, wenn der Cache existiert — trotzdem
+        // übergeben, um zu zeigen, dass er dann ignoriert wird.
+        $result = en_wetter_lesen($this->pdo, $path);
+
+        $this->assertEquals($vorhanden, $result);
+    }
+
+    public function test_regenerieren_schreibt_gueltigen_cache_atomar(): void {
+        $path = $this->tmpCachePfad(); // Verzeichnis existiert bewusst noch nicht.
+        $this->seedTag('2026-07-01', 10.0, 12.0);
+        $this->seedHourReading('2026-07-01', 12, 10.0);
+
+        // Leere ai-Config → en_haiku_wetter liefert sofort null → Template-Fallback.
+        $result = en_wetter_regenerieren($this->pdo, [], $path);
+
+        $this->assertFileExists($path);
+        $onDisk = json_decode(file_get_contents($path), true);
+        $this->assertEquals($result, $onDisk);
+        $this->assertSame('template', $onDisk['quelle']);
+        $this->assertNotSame('', $onDisk['text']);
+        $this->assertArrayHasKey('disziplin', $onDisk['fakten']);
+        $this->assertSame('2026-07-01', $onDisk['datum']);
+
+        // Atomarer Write (tmp-Datei + rename): keine liegen gebliebene tmp-Datei.
+        $this->assertSame([], glob(dirname($path) . '/*.tmp*') ?: []);
+    }
+
+    public function test_regenerieren_robust_bei_leeren_daten(): void {
+        $path = $this->tmpCachePfad(); // Keine Readings/daily_summary vorhanden.
+
+        $result = en_wetter_regenerieren($this->pdo, [], $path);
+
+        $this->assertFileExists($path);
+        $this->assertSame('template', $result['quelle']);
+        $this->assertNotSame('', $result['text']);
+        $this->assertNull($result['fakten']['disziplin']['gap_pct']);
     }
 
     // ── en_wetter_template (reine Funktion, keine DB) ────────────────────────

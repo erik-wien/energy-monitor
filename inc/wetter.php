@@ -6,7 +6,11 @@ declare(strict_types=1);
  * (Verbrauch 30 T vs. Baseline, Lastdisziplin, heutiges Spotprofil) + Template-Fallback.
  * Reine/DB-testbare Funktionen, keine LLM-Abhängigkeit
  * (s. docs/superpowers/specs/2026-07-17-wetterbericht-design.md §1).
+ * en_wetter_regenerieren() (§3, weiter unten) formuliert per Haiku und braucht
+ * daher inc/ai_client.php.
  */
+
+require_once __DIR__ . '/ai_client.php';
 
 /**
  * en_wetter_fakten() — bündelt die drei Fakten-Blöcke für den Wetterbericht,
@@ -213,4 +217,133 @@ function en_wetter_template(array $fakten): string {
     }
 
     return implode(' ', $saetze);
+}
+
+// ── Cache + Off-Path-Regeneration (Spec §3) ─────────────────────────────────
+
+/** Default-Pfad des Wetterbericht-Caches (`data/wetterbericht.json`). */
+function en_wetter_cache_pfad(): string {
+    return dirname(__DIR__) . '/data/wetterbericht.json';
+}
+
+/** Neutrale, DB-lose Fakten (aller Werte null/leer) — Notanker wenn keine DB verfügbar ist. */
+function en_wetter_fakten_leer(): array {
+    return [
+        'verbrauch' => ['ist_kwh' => 0.0, 'basis_kwh' => 0.0, 'delta_pct' => null],
+        'disziplin' => ['gew' => null, 'einfach' => null, 'gap_pct' => null, 'bewertung' => 'neutral'],
+        'heute'     => [
+            'datum' => date('Y-m-d'), 'avg' => null, 'max' => null, 'max_h' => null,
+            'min' => null, 'min_h' => null, 'spitzen' => [],
+            'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+        ],
+    ];
+}
+
+/** Letzter Tag mit tatsächlichem Verbrauch (Muster wie web/index.php). */
+function en_wetter_latest_tag(PDO $pdo): ?string {
+    $latest = $pdo->query("SELECT MAX(day) FROM daily_summary WHERE consumed_kwh > 0")->fetchColumn();
+    return ($latest !== false && $latest !== null) ? (string) $latest : null;
+}
+
+/** Liest+validiert den Cache; null wenn Datei fehlt oder Inhalt unbrauchbar ist. */
+function en_wetter_cache_lesen(string $path): ?array {
+    $raw = @file_get_contents($path);
+    if ($raw === false) return null;
+
+    $data = json_decode($raw, true);
+    if (!is_array($data)) return null;
+    if (!isset($data['datum'], $data['fakten'], $data['text'], $data['quelle'], $data['erzeugt_at'])) return null;
+
+    return [
+        'datum'      => (string) $data['datum'],
+        'fakten'     => (array) $data['fakten'],
+        'text'       => (string) $data['text'],
+        'quelle'     => (string) $data['quelle'],
+        'erzeugt_at' => (string) $data['erzeugt_at'],
+    ];
+}
+
+/** Schreibt den Cache atomar (tmp-Datei im selben Verzeichnis + rename). */
+function en_wetter_cache_schreiben(string $path, array $cache): void {
+    $dir = dirname($path);
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) return;
+
+    $json = json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    if ($json === false) return;
+
+    $tmp = $path . '.tmp' . getmypid() . '_' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, $json) === false) return;
+    if (!@rename($tmp, $path)) @unlink($tmp);
+}
+
+/**
+ * en_wetter_lesen() — liest den Cache; existiert er (noch), wird er unverändert
+ * zurückgegeben. Fehlt/ist er kaputt: sofort Fakten + Template berechnen (schnell,
+ * deterministisch, KEIN Haiku-Call) — nie leer, nie blockierend (Spec §3).
+ *
+ * $pdo/$cachePath sind für Tests injizierbar; im Produktivpfad wird
+ * `en_wetter_lesen()` ohne Argumente aufgerufen (Fallback auf das globale $pdo
+ * aus inc/db.php, Fallback-Pfad auf den echten Cache).
+ *
+ * @return array{datum: string, fakten: array, text: string, quelle: string, erzeugt_at: string}
+ */
+function en_wetter_lesen(?PDO $pdo = null, ?string $cachePath = null): array {
+    $path  = $cachePath ?? en_wetter_cache_pfad();
+    $cache = en_wetter_cache_lesen($path);
+    if ($cache !== null) return $cache;
+
+    $pdo ??= $GLOBALS['pdo'] ?? null;
+    $fakten = en_wetter_fakten_leer();
+    $datum  = date('Y-m-d');
+
+    if ($pdo instanceof PDO) {
+        try {
+            $latest = en_wetter_latest_tag($pdo) ?? $datum;
+            $fakten = en_wetter_fakten($pdo, $latest);
+            $datum  = $latest;
+        } catch (Throwable) {
+            // DB-Fehler: bei den neutralen Fakten bleiben, Template greift trotzdem.
+        }
+    }
+
+    return [
+        'datum'      => $datum,
+        'fakten'     => $fakten,
+        'text'       => en_wetter_template($fakten),
+        'quelle'     => 'template',
+        'erzeugt_at' => date('c'),
+    ];
+}
+
+/**
+ * en_wetter_regenerieren() — berechnet frische Fakten (verankert auf den
+ * letzten Tag mit Verbrauch), lässt Haiku formulieren (Fallback: Template),
+ * und schreibt das Ergebnis atomar in den Cache. Läuft OFF-PATH (Import-Hook
+ * oder `wetter-refresh`-Route), nie synchron beim Dashboard-Seitenaufbau.
+ *
+ * $cachePath ist für Tests injizierbar (Default: der echte Cache-Pfad).
+ *
+ * @return array{datum: string, fakten: array, text: string, quelle: string, erzeugt_at: string}
+ */
+function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null): array {
+    $path = $cachePath ?? en_wetter_cache_pfad();
+
+    $latest = en_wetter_latest_tag($pdo) ?? date('Y-m-d');
+    $fakten = en_wetter_fakten($pdo, $latest);
+
+    $haikuText = en_haiku_wetter($fakten, $cfg);
+    $text      = $haikuText ?? en_wetter_template($fakten);
+    $quelle    = $haikuText !== null ? 'haiku' : 'template';
+
+    $cache = [
+        'datum'      => $latest,
+        'fakten'     => $fakten,
+        'text'       => $text,
+        'quelle'     => $quelle,
+        'erzeugt_at' => date('c'),
+    ];
+
+    en_wetter_cache_schreiben($path, $cache);
+
+    return $cache;
 }

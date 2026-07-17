@@ -3,6 +3,8 @@ require_once __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/../inc/csv_parser.php';
 require_once __DIR__ . '/../inc/csv_importer.php';
 require_once __DIR__ . '/../inc/api_json.php';
+require_once __DIR__ . '/../inc/wetter.php';
+require_once __DIR__ . '/../inc/ai_client.php';
 
 if (empty($_SESSION['loggedin'])) {
     http_response_code(401);
@@ -493,10 +495,46 @@ if ($type === 'daily') {
             'Import OK: %d Tag(e), %d Datei(en) archiviert, %d Kosten neu berechnet.',
             $r['days'], count($r['archived']), $r['recomputed']
         ));
+        // Wetterbericht neu berechnen (Fakten + Haiku/Template) — darf den Import
+        // nie zum Scheitern bringen (Spec §3), daher eigenes try/catch + nur Log.
+        try {
+            en_wetter_regenerieren($pdo, energie_load_config()['ai'] ?? []);
+        } catch (Throwable $e) {
+            appendLog($con, 'wetter', 'Wetterbericht-Regeneration nach Import FAILED: ' . $e->getMessage());
+        }
         api_json_send(['ok' => true, 'days' => $r['days'], 'archived' => $r['archived'], 'recomputed' => $r['recomputed']]);
     } catch (Throwable $e) {
         api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
     }
+
+} elseif ($type === 'wetter-refresh') {
+    // Off-Path-Regeneration des Wetterberichts, vom Dashboard angestoßen wenn der
+    // Cache veraltet ist (Spec §3). Antwortet sofort, Haiku läuft danach im
+    // Hintergrund — Muster wie last.fm-Sync (~/Git/last.fm/web/api.php:261-274).
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        api_json_send(['ok' => false, 'error' => 'method_not_allowed'], 405);
+    }
+    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
+        api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
+    }
+
+    ignore_user_abort(true);
+    set_time_limit(0);
+    $responseJson = json_encode(['ok' => true], JSON_HEX_TAG | JSON_HEX_AMP);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Content-Length: ' . strlen($responseJson));
+    header('Connection: close');
+    echo $responseJson;
+    if (ob_get_level() > 0) ob_end_flush();
+    flush();
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+
+    try {
+        en_wetter_regenerieren($pdo, energie_load_config()['ai'] ?? []);
+    } catch (Throwable $e) {
+        appendLog($con, 'wetter', 'Wetterbericht-Refresh FAILED: ' . $e->getMessage());
+    }
+    exit;
 
 } elseif ($type === 'upload-csv') {
     // Admin-only CSV upload into scrapes/ for manual import
