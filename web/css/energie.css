@@ -400,6 +400,7 @@ main { padding: 1.5rem 2rem; }
 .scrub-readout .ro-eur    { color: var(--color-accent); }
 .scrub-readout .ro-kwh    { color: var(--color-green); }
 .scrub-readout .ro-tariff { color: var(--color-blue); }
+.scrub-readout .ro-eff    { color: var(--color-warning); }
 
 /* ── Invoice table ─────────────────────────────────────────────────────────── */
 

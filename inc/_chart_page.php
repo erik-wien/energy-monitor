@@ -265,7 +265,10 @@ fetch(<?= json_encode($api_url) ?>)
             '<span class="ro-time">' + esc(isDailyPage ? String(data.labels[scrubIndex] ?? '').slice(0, 5) : (data.labels[scrubIndex] ?? '')) + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-eur">'    + fmtEur(data.cost[scrubIndex])        + '</span>'
           + '<span class="ro-sep">·</span><span class="ro-kwh">'    + fmtKwh(data.consumption[scrubIndex]) + '</span>'
-          + '<span class="ro-sep">·</span><span class="ro-tariff">' + fmtCt(data.tariff[scrubIndex])       + '</span>';
+          + '<span class="ro-sep">·</span><span class="ro-tariff">' + fmtCt(data.tariff[scrubIndex])       + '</span>'
+          + (data.epex_wgt && data.epex_wgt[scrubIndex] != null
+                ? '<span class="ro-sep">·</span><span class="ro-eff">' + fmtCt(data.epex_wgt[scrubIndex]) + '</span>'
+                : '');
       }
 
       function setFromClientX(clientX) {
