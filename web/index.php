@@ -174,41 +174,146 @@ $gAvg = $profil['guenstig_avg'] ?? null;
 if ($gVon !== null && $gBis !== null && $gAvg !== null) {
     $wetterChips[] = en_wetter_chip('günstig ' . $gVon . '–' . $gBis . ' h', $wetterDailyHref, null, number_format($gAvg, 1, ',', '.') . ' ct');
 }
+
+// ── Preisverlauf-Tab (Dashboard-Tabs, Spec Teil 1): Daten frisch berechnen,
+// NICHT aus dem evtl. veralteten Wetterbericht-Cache — server-gerendertes SVG.
+$plHeute    = date('Y-m-d');
+$plHeuteFakten = en_wetter_heute($pdo, $plHeute);
+$preisverlaufHeuteSvg = en_preisverlauf_svg(
+    $plHeuteFakten['stunden'] ?? [],
+    $plHeuteFakten['guenstig_von'] ?? null,
+    $plHeuteFakten['guenstig_bis'] ?? null,
+    $plHeuteFakten['spitzen'] ?? [],
+    'Preisverlauf heute'
+);
+$preisverlaufMorgenSvg = null;
+$plSlot = en_wetter_slot(new DateTimeImmutable());
+if (str_ends_with($plSlot, '#nach')) {
+    $plMorgen = date('Y-m-d', strtotime('+1 day'));
+    if (en_wetter_hat_readings($pdo, $plMorgen)) {
+        $plMorgenFakten = en_wetter_heute($pdo, $plMorgen);
+        $preisverlaufMorgenSvg = en_preisverlauf_svg(
+            $plMorgenFakten['stunden'] ?? [],
+            $plMorgenFakten['guenstig_von'] ?? null,
+            $plMorgenFakten['guenstig_bis'] ?? null,
+            $plMorgenFakten['spitzen'] ?? [],
+            'Vorschau morgen'
+        );
+    }
+}
 ?>
 <?php render_page_head('Energie'); render_header('index'); ?>
 <main id="main-content" tabindex="-1">
 
-    <section class="preis-hero" aria-label="Preiszusammensetzung">
-        <h2 class="preis-hero-title">Dein Strompreis je kWh · letzte 30 Tage</h2>
-        <div class="preis-bar-track">
-            <div class="preis-bar">
-                <div class="seg-spot"      data-label="Börse"           data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['spot'])) ?>"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%"></div>
-                <div class="seg-aufschlag" data-label="Aufschlag"       data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['aufschlag'])) ?>" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['aufschlag'])) ?>%"></div>
-                <div class="seg-abgaben"   data-label="Abgaben"         data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['abgaben'])) ?>"   style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['abgaben'])) ?>%"></div>
-                <div class="seg-gba"       data-label="Gebrauchsabgabe" data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['gba'])) ?>"       style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['gba'])) ?>%"></div>
-                <div class="seg-mwst"      data-label="MwSt"            data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['mwst'])) ?>"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['mwst'])) ?>%"></div>
-                <div class="seg-fixkosten" data-label="Fixkosten"       data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['fixkosten'])) ?>" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['fixkosten'])) ?>%"></div>
-            </div>
-            <div class="seg-tooltip" id="seg-tooltip" role="tooltip" hidden></div>
-            <div class="preis-ticks">
-                <div class="preis-tick" style="left:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%">
-                    <span class="tick-mark">▲</span>
-                    <span class="tick-value"><?= fmt_ct($komp['spot']) ?></span>
-                    <span>Börse</span>
-                </div>
-                <div class="preis-tick" style="left:<?= sprintf('%.3f', $komp_pct($komp['netto'])) ?>%">
-                    <span class="tick-mark">▲</span>
-                    <span class="tick-value"><?= fmt_ct($komp['netto']) ?></span>
-                    <span>vergleichbar mit Pauschalangeboten</span>
-                </div>
-                <div class="preis-tick" style="left:100%">
-                    <span class="tick-mark">▲</span>
-                    <span class="tick-value"><?= fmt_ct($komp['brutto']) ?></span>
-                    <span>real gezahlt</span>
-                </div>
-            </div>
+    <?php
+    // erzeugt_at kann (aus Alt-Caches) UTC-Offset tragen — für die Anzeige immer
+    // auf Wien umrechnen, sonst wirkt der Zeitstempel „falsch"/veraltet.
+    $wetterErzeugt = (new DateTime($w['erzeugt_at']))->setTimezone(new DateTimeZone('Europe/Vienna'));
+    $wetterDeTag   = ['Sun'=>'So','Mon'=>'Mo','Tue'=>'Di','Wed'=>'Mi','Thu'=>'Do','Fri'=>'Fr','Sat'=>'Sa'][$wetterErzeugt->format('D')] ?? '';
+    $wetterZeit    = trim($wetterDeTag . ' ' . $wetterErzeugt->format('d.m.Y, H:i'));
+    ?>
+    <div class="dashboard-tabs">
+        <div class="tab-list" role="tablist" aria-label="Dashboard-Ansicht">
+            <button type="button" class="tab-btn" role="tab" id="tab-btn-strompreis" aria-controls="tab-panel-strompreis" aria-selected="false" tabindex="-1">Strompreis</button>
+            <button type="button" class="tab-btn" role="tab" id="tab-btn-preisverlauf" aria-controls="tab-panel-preisverlauf" aria-selected="false" tabindex="-1">Preisverlauf</button>
+            <button type="button" class="tab-btn is-active" role="tab" id="tab-btn-bericht" aria-controls="tab-panel-bericht" aria-selected="true" tabindex="0">Bericht</button>
         </div>
-    </section>
+
+        <div class="tab-panel" role="tabpanel" id="tab-panel-strompreis" aria-labelledby="tab-btn-strompreis" hidden>
+            <section class="preis-hero" aria-label="Preiszusammensetzung">
+                <h2 class="preis-hero-title">Dein Strompreis je kWh · letzte 30 Tage</h2>
+                <div class="preis-bar-track">
+                    <div class="preis-bar">
+                        <div class="seg-spot"      data-label="Börse"           data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['spot'])) ?>"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%"></div>
+                        <div class="seg-aufschlag" data-label="Aufschlag"       data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['aufschlag'])) ?>" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['aufschlag'])) ?>%"></div>
+                        <div class="seg-abgaben"   data-label="Abgaben"         data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['abgaben'])) ?>"   style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['abgaben'])) ?>%"></div>
+                        <div class="seg-gba"       data-label="Gebrauchsabgabe" data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['gba'])) ?>"       style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['gba'])) ?>%"></div>
+                        <div class="seg-mwst"      data-label="MwSt"            data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['mwst'])) ?>"      style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['mwst'])) ?>%"></div>
+                        <div class="seg-fixkosten" data-label="Fixkosten"       data-ct="<?= htmlspecialchars(fmt_ct_plain($komp['fixkosten'])) ?>" style="flex-basis:<?= sprintf('%.3f', $komp_pct($komp['fixkosten'])) ?>%"></div>
+                    </div>
+                    <div class="seg-tooltip" id="seg-tooltip" role="tooltip" hidden></div>
+                    <div class="preis-ticks">
+                        <div class="preis-tick" style="left:<?= sprintf('%.3f', $komp_pct($komp['spot'])) ?>%">
+                            <span class="tick-mark">▲</span>
+                            <span class="tick-value"><?= fmt_ct($komp['spot']) ?></span>
+                            <span>Börse</span>
+                        </div>
+                        <div class="preis-tick" style="left:<?= sprintf('%.3f', $komp_pct($komp['netto'])) ?>%">
+                            <span class="tick-mark">▲</span>
+                            <span class="tick-value"><?= fmt_ct($komp['netto']) ?></span>
+                            <span>vergleichbar mit Pauschalangeboten</span>
+                        </div>
+                        <div class="preis-tick" style="left:100%">
+                            <span class="tick-mark">▲</span>
+                            <span class="tick-value"><?= fmt_ct($komp['brutto']) ?></span>
+                            <span>real gezahlt</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-panel" role="tabpanel" id="tab-panel-preisverlauf" aria-labelledby="tab-btn-preisverlauf" hidden>
+            <section class="preisverlauf-panel" aria-label="Preisverlauf">
+                <h3 class="preisverlauf-subtitel">Heute</h3>
+                <?= $preisverlaufHeuteSvg ?>
+                <?php if ($preisverlaufMorgenSvg !== null): ?>
+                <h3 class="preisverlauf-subtitel">Morgen</h3>
+                <?= $preisverlaufMorgenSvg ?>
+                <?php endif; ?>
+            </section>
+        </div>
+
+        <div class="tab-panel is-active" role="tabpanel" id="tab-panel-bericht" aria-labelledby="tab-btn-bericht">
+            <section class="wetterbericht" aria-label="Wetterbericht">
+                <span class="ui-icon ui-icon-<?= htmlspecialchars($wetterGlyph) ?> wetterbericht-glyph" aria-hidden="true"></span>
+                <div class="wetterbericht-body">
+                    <div class="wetterbericht-head">
+                        <span class="wetterbericht-meta"><?= htmlspecialchars($wetterZeit) ?> · <?= htmlspecialchars($w['quelle']) ?></span>
+                        <button type="button" class="wetterbericht-reload" id="wetter-reload" title="Bericht aktualisieren" aria-label="Bericht aktualisieren">
+                            <span class="ui-icon ui-icon-refresh-cw" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                    <p class="wetterbericht-text"><?= htmlspecialchars($w['text']) ?></p>
+                    <?php if ($wetterChips): ?>
+                    <ul class="wetter-chips">
+                        <?php foreach ($wetterChips as $wetterChip): ?>
+                        <li><?= $wetterChip ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <?php endif; ?>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <dialog id="wetter-confirm" class="wetter-confirm" aria-labelledby="wetter-confirm-title">
+        <p id="wetter-confirm-title">Soll der kostenpflichtige Energiebericht wirklich aktualisiert werden?</p>
+        <div class="wetter-confirm-actions">
+            <button type="button" class="btn" id="wetter-confirm-cancel">Abbrechen</button>
+            <button type="button" class="btn btn-outline-danger" id="wetter-confirm-ok">Aktualisieren</button>
+        </div>
+    </dialog>
+    <script nonce="<?= $_cspNonce ?>">
+    (function() {
+        var tabs = document.querySelectorAll('.tab-list [role="tab"]');
+        tabs.forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                tabs.forEach(function(t) {
+                    var active = t === tab;
+                    t.classList.toggle('is-active', active);
+                    t.setAttribute('aria-selected', active ? 'true' : 'false');
+                    t.tabIndex = active ? 0 : -1;
+                    var panel = document.getElementById(t.getAttribute('aria-controls'));
+                    if (panel) {
+                        panel.hidden = !active;
+                        panel.classList.toggle('is-active', active);
+                    }
+                });
+            });
+        });
+    })();
+    </script>
     <script nonce="<?= $_cspNonce ?>">
     (function() {
         var track = document.querySelector('.preis-bar-track');
@@ -246,41 +351,6 @@ if ($gVon !== null && $gBis !== null && $gAvg !== null) {
         }, true);
     })();
     </script>
-
-    <?php
-    // erzeugt_at kann (aus Alt-Caches) UTC-Offset tragen — für die Anzeige immer
-    // auf Wien umrechnen, sonst wirkt der Zeitstempel „falsch"/veraltet.
-    $wetterErzeugt = (new DateTime($w['erzeugt_at']))->setTimezone(new DateTimeZone('Europe/Vienna'));
-    $wetterDeTag   = ['Sun'=>'So','Mon'=>'Mo','Tue'=>'Di','Wed'=>'Mi','Thu'=>'Do','Fri'=>'Fr','Sat'=>'Sa'][$wetterErzeugt->format('D')] ?? '';
-    $wetterZeit    = trim($wetterDeTag . ' ' . $wetterErzeugt->format('d.m.Y, H:i'));
-    ?>
-    <section class="wetterbericht" aria-label="Wetterbericht">
-        <span class="ui-icon ui-icon-<?= htmlspecialchars($wetterGlyph) ?> wetterbericht-glyph" aria-hidden="true"></span>
-        <div class="wetterbericht-body">
-            <div class="wetterbericht-head">
-                <span class="wetterbericht-meta"><?= htmlspecialchars($wetterZeit) ?> · <?= htmlspecialchars($w['quelle']) ?></span>
-                <button type="button" class="wetterbericht-reload" id="wetter-reload" title="Bericht aktualisieren" aria-label="Bericht aktualisieren">
-                    <span class="ui-icon ui-icon-refresh-cw" aria-hidden="true"></span>
-                </button>
-            </div>
-            <p class="wetterbericht-text"><?= htmlspecialchars($w['text']) ?></p>
-            <?php if ($wetterChips): ?>
-            <ul class="wetter-chips">
-                <?php foreach ($wetterChips as $wetterChip): ?>
-                <li><?= $wetterChip ?></li>
-                <?php endforeach; ?>
-            </ul>
-            <?php endif; ?>
-        </div>
-    </section>
-
-    <dialog id="wetter-confirm" class="wetter-confirm" aria-labelledby="wetter-confirm-title">
-        <p id="wetter-confirm-title">Soll der kostenpflichtige Energiebericht wirklich aktualisiert werden?</p>
-        <div class="wetter-confirm-actions">
-            <button type="button" class="btn" id="wetter-confirm-cancel">Abbrechen</button>
-            <button type="button" class="btn btn-outline-danger" id="wetter-confirm-ok">Aktualisieren</button>
-        </div>
-    </dialog>
     <script nonce="<?= $_cspNonce ?>">
     (function() {
         const reloadBtn = document.getElementById('wetter-reload');
