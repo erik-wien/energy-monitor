@@ -213,9 +213,11 @@ final class WetterTest extends TestCase {
 
     // ── en_wetter_heute ──────────────────────────────────────────────────────
 
-    public function test_heute_guenstigstes_3h_fenster_ist_fenster_mit_min_avg(): void {
-        // Stunden 10..14 mit V-förmigem Profil; das Minimum-Ø-Fenster liegt
-        // NICHT am Rand, sondern bei 11-13 (avg ≈ 8,67), nicht 10-12 oder 12-14.
+    public function test_heute_guenstige_talphase_ist_laengster_zusammenhaengender_lauf(): void {
+        // Stunden 10..14 mit V-förmigem Profil; min=5 (h12), max=20 (h10/h14) ->
+        // Schwelle = 5 + (20-5)*0,3 = 9,5. Nur h12 (5,0) und h13 (6,0) liegen
+        // darunter und sind zusammenhängend -> Lauf 12-14 (nicht ein starres
+        // 3h-Fenster über den ganzen Bereich).
         $this->seedHourReading('2026-07-17', 10, 20.0);
         $this->seedHourReading('2026-07-17', 11, 15.0);
         $this->seedHourReading('2026-07-17', 12, 5.0);
@@ -224,9 +226,9 @@ final class WetterTest extends TestCase {
 
         $heute = en_wetter_heute($this->pdo, '2026-07-17');
 
-        $this->assertSame(11, $heute['guenstig_von']);
+        $this->assertSame(12, $heute['guenstig_von']);
         $this->assertSame(14, $heute['guenstig_bis']);
-        $this->assertEqualsWithDelta((15.0 + 5.0 + 6.0) / 3.0, $heute['guenstig_avg'], 0.001);
+        $this->assertEqualsWithDelta((5.0 + 6.0) / 2.0, $heute['guenstig_avg'], 0.001);
 
         $this->assertEqualsWithDelta((20.0 + 15.0 + 5.0 + 6.0 + 20.0) / 5.0, $heute['avg'], 0.001);
         $this->assertEqualsWithDelta(20.0, $heute['max'], 0.001);
@@ -234,6 +236,21 @@ final class WetterTest extends TestCase {
         $this->assertEqualsWithDelta(5.0, $heute['min'], 0.001);
         $this->assertSame(12, $heute['min_h']);
         $this->assertSame([10, 14], $heute['spitzen']); // > avg*1.25 = 16.5
+    }
+
+    public function test_heute_guenstige_talphase_breites_tal_wird_vollstaendig_erkannt(): void {
+        // Breite Tal-Phase 10-15 Uhr (günstig), Rest teuer -> der längste Lauf
+        // ist die gesamte Tal-Phase (10-16), nicht nur ein Ausschnitt daraus.
+        foreach (range(0, 23) as $h) {
+            $guenstig = $h >= 10 && $h <= 15;
+            $this->seedHourReading('2026-07-17', $h, $guenstig ? 5.0 : 20.0);
+        }
+
+        $heute = en_wetter_heute($this->pdo, '2026-07-17');
+
+        $this->assertSame(10, $heute['guenstig_von']);
+        $this->assertSame(16, $heute['guenstig_bis']);
+        $this->assertEqualsWithDelta(5.0, $heute['guenstig_avg'], 0.001);
     }
 
     public function test_heute_leerer_tag_alle_felder_null(): void {

@@ -234,11 +234,16 @@ function en_wetter_disziplin(PDO $pdo, string $gestern): array {
     return ['laeufe' => $laeufe, 'bewertung' => $bewertung];
 }
 
+/** Anteil des Tagesbandes (min..max der Stunden-Ø-Spotpreise), der als „günstig" zählt (Spec Änderung C). */
+const EN_GUENSTIG_ANTEIL = 0.30;
+
 /**
  * Heutiges Preisprofil: Stunden-Aggregat (AVG(spot_ct) je HOUR(ts)) des Tages
  * $latest aus `readings`. avg/max/min(+Stunde), Spitzen (Stunde > avg·1,25),
- * günstigstes gleitendes 3-h-Fenster (min Ø über drei aufeinanderfolgende Stunden).
- * Leerer Tag (keine Readings) → alle Werte null / [].
+ * günstiges Fenster = die längste zusammenhängende Folge aufeinanderfolgender
+ * Stunden mit Ø-Spot ≤ Schwelle (min + (max−min)·EN_GUENSTIG_ANTEIL, unteres
+ * 30 % des Tagesbandes). Bei gleicher Länge gewinnt der Lauf mit dem
+ * niedrigeren Durchschnitt. Leerer Tag (keine Readings) → alle Werte null / [].
  */
 function en_wetter_heute(PDO $pdo, string $latest): array {
     $result = [
@@ -275,19 +280,34 @@ function en_wetter_heute(PDO $pdo, string $latest): array {
     }
     sort($spitzen);
 
-    // Günstigstes gleitendes 3-h-Fenster über drei lückenlos aufeinanderfolgende
-    // Stunden (keine Wrap-around-Fenster über Mitternacht).
+    // Längster zusammenhängender Lauf aufeinanderfolgender Stunden mit
+    // Ø-Spot <= Schwelle (unteres EN_GUENSTIG_ANTEIL des Tagesbandes min..max).
+    $schwelle = $minV + ($maxV - $minV) * EN_GUENSTIG_ANTEIL;
+
     $stundenSortiert = array_keys($stunden);
     sort($stundenSortiert);
     $guenstigVon = null; $guenstigBis = null; $guenstigAvg = null;
-    $bestAvg = null;
+    $bestLen = 0; $bestAvg = null;
+    $curStart = null; $curSum = 0.0; $curLen = 0; $curLast = null;
     foreach ($stundenSortiert as $h) {
-        if (!isset($stunden[$h + 1], $stunden[$h + 2])) continue;
-        $fensterAvg = ($stunden[$h] + $stunden[$h + 1] + $stunden[$h + 2]) / 3.0;
-        if ($bestAvg === null || $fensterAvg < $bestAvg) {
-            $bestAvg = $fensterAvg;
-            $guenstigVon = $h;
-            $guenstigBis = $h + 3;
+        if ($stunden[$h] > $schwelle) continue;
+
+        if ($curStart !== null && $curLast === $h - 1) {
+            $curSum += $stunden[$h];
+            $curLen++;
+        } else {
+            $curStart = $h;
+            $curSum = $stunden[$h];
+            $curLen = 1;
+        }
+        $curLast = $h;
+        $curAvg = $curSum / $curLen;
+
+        if ($curLen > $bestLen || ($curLen === $bestLen && $curAvg < $bestAvg)) {
+            $bestLen = $curLen;
+            $bestAvg = $curAvg;
+            $guenstigVon = $curStart;
+            $guenstigBis = $curLast + 1;
         }
     }
     $guenstigAvg = $guenstigVon !== null ? $bestAvg : null;
