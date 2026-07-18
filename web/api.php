@@ -121,8 +121,11 @@ if ($type === 'daily') {
 
     echo json_encode([
         'labels'            => array_column($rows, 'label'),
-        'cost'              => array_map('floatval', array_column($rows, 'cost_brutto')),
-        'consumption'       => array_map('floatval', array_column($rows, 'consumed_kwh')),
+        // Ohne Verbrauch (consumed_kwh == 0) → null statt 0: Chart.js zeichnet
+        // dann keine irreführende 0-Linie für Verbrauch/Kosten (echter Verbrauch
+        // ist nie exakt 0; z. B. heutiger Tag, für den nur Spotpreise vorliegen).
+        'cost'              => array_map(fn($r) => ((float)$r['consumed_kwh']) > 0 ? (float)$r['cost_brutto']  : null, $rows),
+        'consumption'       => array_map(fn($r) => ((float)$r['consumed_kwh']) > 0 ? (float)$r['consumed_kwh'] : null, $rows),
         'tariff'            => array_map('floatval', array_column($rows, 'spot_ct')),
         'hist_tariff_avg'   => $htariff_avg,
         'hist_tariff_min'   => $htariff_min,
@@ -572,6 +575,21 @@ if ($type === 'daily') {
     }
     if (!csrf_verify($_POST['csrf_token'] ?? '')) {
         api_json_send(['ok' => false, 'error' => 'invalid_csrf'], 403);
+    }
+
+    // Manueller Reload-Button (force=1): SYNCHRON neu bestellen — der Nutzer
+    // wartet auf das Ergebnis und lädt danach neu; der Slot-Guard/2×-Tag-Cache
+    // wird bewusst umgangen (kostenpflichtige Neubestellung auf Wunsch).
+    if (($_POST['force'] ?? '') === '1') {
+        set_time_limit(0);
+        try {
+            $r = en_wetter_regenerieren($pdo, energie_load_config()['ai'] ?? [], null, null, true);
+            appendLog($con, 'wetter', 'Wetterbericht manuell aktualisiert (quelle=' . (string) ($r['quelle'] ?? '?') . ').');
+            api_json_send(['ok' => true, 'quelle' => $r['quelle'] ?? null]);
+        } catch (Throwable $e) {
+            appendLog($con, 'wetter', 'Wetterbericht-Force-Refresh FAILED: ' . $e->getMessage());
+            api_json_send(['ok' => false, 'error' => 'exception', 'detail' => $e->getMessage()], 500);
+        }
     }
 
     ignore_user_abort(true);

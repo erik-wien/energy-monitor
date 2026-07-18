@@ -798,17 +798,21 @@ function en_wetter_lesen(?PDO $pdo = null, ?string $cachePath = null): array {
  * @return array{datum: string, slot: string, stand: array, symbol: string,
  *               fakten: array, text: string, quelle: string, erzeugt_at: string}
  */
-function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null, ?DateTimeImmutable $now = null): array {
+function en_wetter_regenerieren(PDO $pdo, array $cfg, ?string $cachePath = null, ?DateTimeImmutable $now = null, bool $force = false): array {
     $path = $cachePath ?? en_wetter_cache_pfad();
     $now  ??= new DateTimeImmutable();
     $slot = en_wetter_slot($now);
 
     // In-Flight-Guard: jemand hat für diesen Slot gerade erst regeneriert
     // (billiger optimistischer Check; das atomare Rename schützt ohnehin vor
-    // Korruption, hier geht es nur um doppelte Haiku-Bestellungen).
-    $vorhanden = en_wetter_cache_lesen($path);
-    if ($vorhanden !== null && $vorhanden['slot'] === $slot) {
-        return $vorhanden;
+    // Korruption, hier geht es nur um doppelte Haiku-Bestellungen). $force
+    // (manueller Reload-Button) umgeht den Guard bewusst — kostenpflichtige
+    // Neubestellung auf ausdrücklichen Nutzerwunsch.
+    if (!$force) {
+        $vorhanden = en_wetter_cache_lesen($path);
+        if ($vorhanden !== null && $vorhanden['slot'] === $slot) {
+            return $vorhanden;
+        }
     }
 
     // Morgen-Vorschau nur im #nach-Slot UND wenn für morgen bereits

@@ -33,14 +33,29 @@ $period_label = $fmt_day($date);
 $prev_label   = $fmt_day($prev_date);
 $next_label   = $fmt_day($next_date);
 $api_url      = $base . '/api.php?type=daily&date=' . $date;
-$kpi_kwh      = (float)$summary['consumed_kwh'];
-$kpi_eur      = (float)$summary['cost_brutto'];
+// Kein Verbrauch = noch keine Verbrauchsdaten (echter Tagesverbrauch ist nie
+// exakt 0). Dann Verbrauch/Kosten/Ø-effektiv als null → das UI zeigt „n/a"
+// statt irreführender Nullwerte, und der Graph zeichnet keine 0-Linie.
+$hasConsumption = ((float)$summary['consumed_kwh']) > 0.0;
+$kpi_kwh      = $hasConsumption ? (float)$summary['consumed_kwh'] : null;
+$kpi_eur      = $hasConsumption ? (float)$summary['cost_brutto']  : null;
+
+// Ø Spotpreis: bevorzugt aus daily_summary; fehlt der (z. B. heute — Spot da,
+// Verbrauch noch nicht importiert), aus den readings-Spotwerten des Tages.
 $kpi_ct       = (float)$summary['avg_spot_ct'];
+if ($kpi_ct <= 0.0) {
+    $stmt = $pdo->prepare("SELECT AVG(spot_ct) FROM readings WHERE DATE(ts) = ?");
+    $stmt->execute([$date]);
+    $avgSpot = $stmt->fetchColumn();
+    $kpi_ct  = $avgSpot !== null ? (float)$avgSpot : null;
+}
+
 // Ø effektiv (netto) = verbrauchsgewichteter Spot Σ(kWh×Spot)/Σ kWh des Tages.
 $stmt = $pdo->prepare(
     "SELECT SUM(spot_ct * consumed_kwh) / NULLIF(SUM(consumed_kwh), 0)
      FROM readings WHERE DATE(ts) = ?");
 $stmt->execute([$date]);
-$kpi_eff      = (float)$stmt->fetchColumn();
+$effVal       = $stmt->fetchColumn();
+$kpi_eff      = ($hasConsumption && $effVal !== null) ? (float)$effVal : null;
 
 require __DIR__ . '/../inc/_chart_page.php';

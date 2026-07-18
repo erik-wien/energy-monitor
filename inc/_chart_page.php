@@ -17,6 +17,9 @@ require_once __DIR__ . '/layout.php';
 function fmt_kwh($v) { return number_format($v, 1, ',', '.') . ' <span class="unit">kWh</span>'; }
 function fmt_eur($v) { return '<span class="unit">€</span> ' . number_format($v, 2, ',', '.'); }
 function fmt_ct($v)  { return number_format($v, 2, ',', '.') . ' <span class="unit">ct/kWh</span>'; }
+/** Rendert „n/a", wenn kein Wert vorliegt (z. B. Tag ohne Verbrauchsdaten),
+ *  sonst den formatierten Wert. Vermeidet irreführende Nullwerte. */
+function fmt_or_na(?float $v, callable $fmt): string { return $v === null ? '<span class="na">n/a</span>' : $fmt($v); }
 
 $_chartHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"'
             . ' nonce="' . htmlspecialchars($_cspNonce, ENT_QUOTES, 'UTF-8') . '"></script>'
@@ -49,19 +52,19 @@ render_header($page_type);
     <div class="kpi-strip">
         <div class="kpi-card">
             <div class="label">Verbrauch</div>
-            <div class="value kwh"><?= fmt_kwh($kpi_kwh) ?></div>
+            <div class="value kwh"><?= fmt_or_na($kpi_kwh, 'fmt_kwh') ?></div>
         </div>
         <div class="kpi-card">
             <div class="label">Kosten</div>
-            <div class="value eur"><?= fmt_eur($kpi_eur) ?></div>
+            <div class="value eur"><?= fmt_or_na($kpi_eur, 'fmt_eur') ?></div>
         </div>
         <div class="kpi-card">
             <div class="label">Ø Spotpreis</div>
-            <div class="value tariff"><?= fmt_ct($kpi_ct) ?></div>
+            <div class="value tariff"><?= fmt_or_na($kpi_ct, 'fmt_ct') ?></div>
         </div>
         <div class="kpi-card">
             <div class="label">Ø effektiv</div>
-            <div class="value eff"><?= fmt_ct($kpi_eff) ?></div>
+            <div class="value eff"><?= fmt_or_na($kpi_eff, 'fmt_ct') ?></div>
         </div>
     </div>
     <div class="chart-controls">

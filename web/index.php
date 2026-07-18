@@ -247,9 +247,20 @@ if ($gVon !== null && $gBis !== null && $gAvg !== null) {
     })();
     </script>
 
+    <?php
+    $wetterErzeugt = new DateTime($w['erzeugt_at']);
+    $wetterDeTag   = ['Sun'=>'So','Mon'=>'Mo','Tue'=>'Di','Wed'=>'Mi','Thu'=>'Do','Fri'=>'Fr','Sat'=>'Sa'][$wetterErzeugt->format('D')] ?? '';
+    $wetterZeit    = trim($wetterDeTag . ' ' . $wetterErzeugt->format('d.m.Y, H:i'));
+    ?>
     <section class="wetterbericht" aria-label="Wetterbericht">
         <span class="ui-icon ui-icon-<?= htmlspecialchars($wetterGlyph) ?> wetterbericht-glyph" aria-hidden="true"></span>
         <div class="wetterbericht-body">
+            <div class="wetterbericht-head">
+                <span class="wetterbericht-meta"><?= htmlspecialchars($wetterZeit) ?> · <?= htmlspecialchars($w['quelle']) ?></span>
+                <button type="button" class="wetterbericht-reload" id="wetter-reload" title="Bericht aktualisieren" aria-label="Bericht aktualisieren">
+                    <span class="ui-icon ui-icon-refresh-cw" aria-hidden="true"></span>
+                </button>
+            </div>
             <p class="wetterbericht-text"><?= htmlspecialchars($w['text']) ?></p>
             <?php if ($wetterChips): ?>
             <ul class="wetter-chips">
@@ -258,11 +269,49 @@ if ($gVon !== null && $gBis !== null && $gAvg !== null) {
                 <?php endforeach; ?>
             </ul>
             <?php endif; ?>
-            <div class="wetterbericht-meta">
-                aktualisiert <?= htmlspecialchars((new DateTime($w['erzeugt_at']))->format('H:i')) ?> · <?= htmlspecialchars($w['quelle']) ?>
-            </div>
         </div>
     </section>
+
+    <dialog id="wetter-confirm" class="wetter-confirm" aria-labelledby="wetter-confirm-title">
+        <p id="wetter-confirm-title">Soll der kostenpflichtige Energiebericht wirklich aktualisiert werden?</p>
+        <div class="wetter-confirm-actions">
+            <button type="button" class="btn" id="wetter-confirm-cancel">Abbrechen</button>
+            <button type="button" class="btn btn-outline-danger" id="wetter-confirm-ok">Aktualisieren</button>
+        </div>
+    </dialog>
+    <script nonce="<?= $_cspNonce ?>">
+    (function() {
+        const reloadBtn = document.getElementById('wetter-reload');
+        const dlg       = document.getElementById('wetter-confirm');
+        const okBtn     = document.getElementById('wetter-confirm-ok');
+        const cancelBtn = document.getElementById('wetter-confirm-cancel');
+        const titleEl   = document.getElementById('wetter-confirm-title');
+        if (!reloadBtn || !dlg) return;
+        const _base = <?= json_encode($base) ?>;
+        const _csrf = <?= json_encode(csrf_token()) ?>;
+        reloadBtn.addEventListener('click', () => dlg.showModal());
+        cancelBtn.addEventListener('click', () => dlg.close());
+        // §8: Backdrop-Schließen auf pointerdown (nicht click), sonst schließt ein
+        // Text-/Scroll-Drag von innen den Dialog fälschlich.
+        dlg.addEventListener('pointerdown', e => { if (e.target === dlg) dlg.close(); });
+        okBtn.addEventListener('click', async () => {
+            okBtn.disabled = true; cancelBtn.disabled = true;
+            okBtn.textContent = 'Aktualisiere…';
+            try {
+                await fetch(_base + '/api.php?type=wetter-refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'force=1&csrf_token=' + encodeURIComponent(_csrf)
+                });
+                location.reload();  // frischer Bericht (Haiku lief synchron bei force)
+            } catch (e) {
+                okBtn.disabled = false; cancelBtn.disabled = false;
+                okBtn.textContent = 'Aktualisieren';
+                titleEl.textContent = 'Aktualisierung fehlgeschlagen— bitte erneut versuchen (' + (e && e.message ? e.message : 'Netzwerkfehler') + ').';
+            }
+        });
+    })();
+    </script>
     <?php if ($wetterBrauchtRefresh): ?>
     <script nonce="<?= $_cspNonce ?>">
     (function() {
