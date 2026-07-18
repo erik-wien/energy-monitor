@@ -248,7 +248,9 @@ if ($gVon !== null && $gBis !== null && $gAvg !== null) {
     </script>
 
     <?php
-    $wetterErzeugt = new DateTime($w['erzeugt_at']);
+    // erzeugt_at kann (aus Alt-Caches) UTC-Offset tragen — für die Anzeige immer
+    // auf Wien umrechnen, sonst wirkt der Zeitstempel „falsch"/veraltet.
+    $wetterErzeugt = (new DateTime($w['erzeugt_at']))->setTimezone(new DateTimeZone('Europe/Vienna'));
     $wetterDeTag   = ['Sun'=>'So','Mon'=>'Mo','Tue'=>'Di','Wed'=>'Mi','Thu'=>'Do','Fri'=>'Fr','Sat'=>'Sa'][$wetterErzeugt->format('D')] ?? '';
     $wetterZeit    = trim($wetterDeTag . ' ' . $wetterErzeugt->format('d.m.Y, H:i'));
     ?>

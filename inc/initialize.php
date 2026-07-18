@@ -9,6 +9,10 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/config.php';
 
+// Zeitzone app-weit fixieren — host-unabhängig (akadbrain-FPM läuft sonst auf
+// UTC → Wetterbericht-Zeitstempel und die 14-Uhr-Slot-Grenze wären verschoben).
+date_default_timezone_set('Europe/Vienna');
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 $_cfg = energie_load_config();
