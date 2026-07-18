@@ -62,6 +62,33 @@ function invoice_breakdown(array &$rows, bool $is_daily,
     }
 }
 
+// Grundlast-Tageslinie (Spec Teil 2, 2026-07-18): 10. Perzentil (EN_GRUNDLAST_PERZENTIL,
+// inc/wetter.php) der positiven 15-Min-consumed_kwh je Gruppe (Tag oder Monat) × 4 (=kW).
+// $groupExpr gruppiert per SQL (Tag: DATE(ts); Monat: DATE_FORMAT(ts,'%Y-%m')), $keys ist
+// die schon vorhandene labels-/dates-Reihenfolge des Blocks; fehlender Schlüssel -> null.
+function en_grundlast_by_key(PDO $pdo, string $start, string $end, string $groupExpr, array $keys): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT {$groupExpr} AS k, consumed_kwh FROM readings
+         WHERE ts >= ? AND ts < ? AND consumed_kwh > 0
+         ORDER BY k, consumed_kwh"
+    );
+    $stmt->execute([$start, $end]);
+    $byKey = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $byKey[$row['k']][] = (float)$row['consumed_kwh'];
+    }
+    $out = [];
+    foreach ($keys as $k) {
+        $vals = $byKey[$k] ?? [];
+        if (!$vals) { $out[] = null; continue; }
+        sort($vals);
+        $idx = min((int) floor(EN_GRUNDLAST_PERZENTIL * count($vals)), count($vals) - 1);
+        $out[] = $vals[$idx] * 4.0;
+    }
+    return $out;
+}
+
 // Tariff JOIN fragment (correlated subquery on a date column alias).
 // Usage: wrap data query as subquery "agg", then LEFT JOIN tariff on agg.<date_col>
 define('TARIFF_COLS', "t.provider_surcharge_ct, t.electricity_tax_ct, t.renewable_tax_ct,
@@ -197,6 +224,11 @@ if ($type === 'daily') {
 
     $mon = (new DateTime())->setISODate($year, $week, 1);
     $sun = (new DateTime())->setISODate($year, $week, 7);
+    $grundlast = en_grundlast_by_key(
+        $pdo, $mon->format('Y-m-d') . ' 00:00:00',
+        (clone $sun)->modify('+1 day')->format('Y-m-d') . ' 00:00:00',
+        'DATE(ts)', array_column($rows, 'raw_date')
+    );
     echo json_encode([
         'labels'            => array_column($rows, 'label'),
         'cost'              => array_map('floatval', array_column($rows, 'cost_brutto')),
@@ -215,6 +247,7 @@ if ($type === 'daily') {
         'maxKwh'            => $max_daily_kwh,
         'epex'              => $epex,
         'epex_wgt'          => array_map(fn($r) => $r['epex_wgt'] !== null ? (float)$r['epex_wgt'] : null, $rows),
+        'grundlast'         => $grundlast,
         'aufschlag'         => $aufschlag,
         'abgaben'           => $abgaben,
         'gebrauchsabgabe'   => $gba,
@@ -276,6 +309,9 @@ if ($type === 'daily') {
     invoice_breakdown($rows, false, $epex, $aufschlag, $abgaben, $gba, $mwst, $gesamt_var, $mfp, $rfp);
 
     $last_day = (int)date('t', mktime(0, 0, 0, $month, 1, $year));
+    $monthStart = sprintf('%04d-%02d-01', $year, $month);
+    $monthEnd   = date('Y-m-01', strtotime($monthStart . ' +1 month'));
+    $grundlast  = en_grundlast_by_key($pdo, $monthStart, $monthEnd, 'DATE(ts)', array_column($rows, 'raw_date'));
     echo json_encode([
         'labels'            => array_column($rows, 'label'),
         'cost'              => array_map('floatval', array_column($rows, 'cost_brutto')),
@@ -294,6 +330,7 @@ if ($type === 'daily') {
         'maxKwh'            => $max_daily_kwh,
         'epex'              => $epex,
         'epex_wgt'          => array_map(fn($r) => $r['epex_wgt'] !== null ? (float)$r['epex_wgt'] : null, $rows),
+        'grundlast'         => $grundlast,
         'aufschlag'         => $aufschlag,
         'abgaben'           => $abgaben,
         'gebrauchsabgabe'   => $gba,
@@ -359,6 +396,11 @@ if ($type === 'daily') {
     $mfp = 0.0; $rfp = 0.0;
     invoice_breakdown($rows, false, $epex, $aufschlag, $abgaben, $gba, $mwst, $gesamt_var, $mfp, $rfp);
 
+    // Yearly ist Monats-granular (keine 'dates'-Liste) — Grundlast daher je Monat
+    // (10. Perzentil der 15-Min-Werte innerhalb des Monats), ausgerichtet an 'months'.
+    $yearlyEnd = date('Y-m-d', strtotime($end . ' +1 month'));
+    $grundlast = en_grundlast_by_key($pdo, $start, $yearlyEnd, "DATE_FORMAT(ts, '%Y-%m')", array_column($rows, 'month_key'));
+
     echo json_encode([
         'labels'            => array_column($rows, 'label'),
         'months'            => array_column($rows, 'month_key'),
@@ -373,6 +415,7 @@ if ($type === 'daily') {
         'hist_kwh_max'      => $hkwh_max,
         'epex'              => $epex,
         'epex_wgt'          => array_map(fn($r) => $r['epex_wgt'] !== null ? (float)$r['epex_wgt'] : null, $rows),
+        'grundlast'         => $grundlast,
         'aufschlag'         => $aufschlag,
         'abgaben'           => $abgaben,
         'gebrauchsabgabe'   => $gba,

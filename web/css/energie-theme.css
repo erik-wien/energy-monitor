@@ -18,6 +18,7 @@
     --color-green:   #68d391;
     --color-blue:    #63b3ed;
     --color-warning:            #ecc94b;
+    --color-orange:             #ed8936;
     --color-pill-cost:          #fc8181;
     --color-pill-green-strong:  #38a169;
     --color-pill-blue-strong:   #3182ce;
@@ -35,6 +36,7 @@
     --color-green:   #276749;
     --color-blue:    #2b6cb0;
     --color-warning:            #b7791f;
+    --color-orange:             #c05621;
     --color-pill-cost:          #c53030;
     --color-pill-green-strong:  #22543d;
     --color-pill-blue-strong:   #1e3a8a;
@@ -53,6 +55,7 @@
         --color-green:   #276749;
         --color-blue:    #2b6cb0;
         --color-warning:            #b7791f;
+        --color-orange:             #c05621;
         --color-pill-cost:          #c53030;
         --color-pill-green-strong:  #22543d;
         --color-pill-blue-strong:   #1e3a8a;

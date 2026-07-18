@@ -75,6 +75,7 @@ render_header($page_type);
         <button type="button" class="chart-pill chart-pill--tariff"  data-key="tariff">Tarif</button>
         <button type="button" class="chart-pill chart-pill--minmax"  data-key="minmax" id="btn-minmax">Tarif Band</button>
         <button type="button" class="chart-pill chart-pill--eff"     data-key="eff" id="btn-eff">Effektiv netto</button>
+        <button type="button" class="chart-pill chart-pill--grundlast" data-key="grundlast" id="btn-grundlast">Grundlast</button>
     </div>
     <div class="chart-container">
         <canvas id="chart"></canvas>
@@ -117,6 +118,16 @@ fetch(<?= json_encode($api_url) ?>)
       },
     ];
 
+    // Grundlast (kW): eigene versteckte Achse y4, damit die Linie unabhängig
+    // vom Verbrauchsmaßstab gut sichtbar bleibt. Nur ab Wochenansicht (Spec Teil 2).
+    const grundlastDatasets = isDailyPage ? [] : [
+      {
+        type: 'line', label: 'Grundlast (kW)', data: data.grundlast,
+        borderColor: '#ed8936', backgroundColor: 'rgba(237,137,54,0.1)',
+        borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y4', order: 6,
+      },
+    ];
+
     const shadowDatasets = isDailyPage ? [] : [
       {
         type: 'line', label: '_tariff_max', data: data.max_spot,
@@ -151,6 +162,7 @@ fetch(<?= json_encode($api_url) ?>)
             borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y3', order: 0,
           },
           ...effDatasets,
+          ...grundlastDatasets,
           {
             type: 'line', label: '_hkwh_max', data: data.hist_kwh_max,
             borderColor: 'transparent', backgroundColor: 'rgba(56,161,105,0.13)',
@@ -218,7 +230,8 @@ fetch(<?= json_encode($api_url) ?>)
           y3: { ticks: { color: '#63b3ed' }, grid: { display: false }, position: 'right',
                 title: { display: true, text: 'Tarif (ct/kWh)', color: '#63b3ed' },
                 min: isDailyPage ? -25 : undefined,
-                max: isDailyPage ?  35  : undefined }
+                max: isDailyPage ?  35  : undefined },
+          y4: { display: false, position: 'right', beginAtZero: true, grid: { display: false } }
         }
       }
     });
@@ -551,12 +564,12 @@ document.getElementById('print-btn').addEventListener('click', () => {
 // Dataset visibility controls
 (function() {
   const storageKey = 'energie-vis-' + <?= json_encode($page_type) ?>;
-  const defaults   = { cost: true, kwh: true, tariff: true, minmax: true, eff: true, hkwh: true, hkband: true };
+  const defaults   = { cost: true, kwh: true, tariff: true, minmax: true, eff: true, hkwh: true, hkband: true, grundlast: true };
   let vis = Object.assign({}, defaults, JSON.parse(localStorage.getItem(storageKey) || '{}'));
 
   if (isDailyPage) {
-    // Tarif-Band + Effektiv-netto-Pill sind in der Tagesansicht gegenstandslos.
-    ['btn-minmax', 'btn-eff'].forEach(id => {
+    // Tarif-Band + Effektiv-netto- + Grundlast-Pille sind in der Tagesansicht gegenstandslos.
+    ['btn-minmax', 'btn-eff', 'btn-grundlast'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.style.display = 'none';
     });
@@ -574,6 +587,7 @@ document.getElementById('print-btn').addEventListener('click', () => {
       else if (ds.label === 'Tarif (ct/kWh)')      meta.hidden = !vis.tariff;
       else if (ds.label.startsWith('_tariff'))      meta.hidden = !vis.minmax;
       else if (ds.label === 'Effektiv netto (ct/kWh)') meta.hidden = !vis.eff;
+      else if (ds.label === 'Grundlast (kW)')       meta.hidden = !vis.grundlast;
       else if (ds.label === 'Ø Verbrauch (kWh)')   meta.hidden = !vis.hkwh;
       else if (ds.label.startsWith('_hkwh'))        meta.hidden = !vis.hkband;
     });

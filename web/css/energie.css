@@ -376,6 +376,7 @@ main { padding: 1.5rem 2rem; }
 .chart-pill--eff     { --pill-color: var(--color-warning); }
 .chart-pill--hkwh    { --pill-color: var(--color-pill-green-strong); }
 .chart-pill--hkband  { --pill-color: var(--color-pill-green-strong); }
+.chart-pill--grundlast { --pill-color: var(--color-orange); }
 
 /* ── Scrub-Lineal (Detail-Ablesen) ─────────────────────────────────────────── */
 
