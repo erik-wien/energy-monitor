@@ -34,6 +34,7 @@ require_once __DIR__ . '/ai_client.php';
  *   disziplin: array{laeufe: array, bewertung: ?string},
  *   preis: array{heute: array, morgen: ?array, heute_vs_ueblich_pct: ?float,
  *              heute_vs_vorjahr_pct: ?float, symbol: string},
+ *   grundlast: array{w24_kw: ?float, w168_kw: ?float},
  *   auffaellig: string[],
  *   vorschau: bool
  * }
@@ -57,6 +58,10 @@ function en_wetter_fakten(PDO $pdo, ?DateTimeImmutable $now = null, ?string $pro
         'verbrauch'  => $verbrauch,
         'disziplin'  => $disziplin,
         'preis'      => $preis,
+        'grundlast'  => [
+            'w24_kw'  => en_wetter_grundlast($pdo, $now, 24),
+            'w168_kw' => en_wetter_grundlast($pdo, $now, 168),
+        ],
         'auffaellig' => en_wetter_auffaelligkeiten($pdo, $gestern, $preis['heute']),
         'vorschau'   => $profilMorgen !== null,
     ];
@@ -160,6 +165,34 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
         'd30_delta_pct'   => $d30DeltaPct,
         'trend'           => $trend,
     ];
+}
+
+/** Perzentil der Intervall-consumed_kwh, das als Grundlast-Schätzer dient (Spec Änderung D). */
+const EN_GRUNDLAST_PERZENTIL = 0.10;
+
+/**
+ * en_wetter_grundlast() — schätzt die Grundlast in kW über das Fenster
+ * `(bis − $stunden Stunden, bis]` aus `readings.consumed_kwh` (Spec Änderung
+ * D): 10. Perzentil (EN_GRUNDLAST_PERZENTIL) der positiven 15-Min-Intervall-
+ * Verbrauchswerte in diesem Fenster, ×4 (15-Min-Intervall → kW). Perzentil
+ * statt Minimum, um 0-/Mess-Ausreißer zu dämpfen. Keine Zeilen im Fenster
+ * (z. B. `consumed_kwh <= 0` überall oder keine Readings) → null.
+ */
+function en_wetter_grundlast(PDO $pdo, DateTimeImmutable $bis, int $stunden): ?float {
+    $bisStr = $bis->format('Y-m-d H:i:s');
+    $stmt = $pdo->prepare(
+        "SELECT consumed_kwh FROM readings
+         WHERE consumed_kwh > 0 AND ts > DATE_SUB(?, INTERVAL {$stunden} HOUR) AND ts <= ?
+         ORDER BY consumed_kwh"
+    );
+    $stmt->execute([$bisStr, $bisStr]);
+    $werte = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!$werte) return null;
+
+    $werte = array_map('floatval', $werte);
+    $idx   = min((int) floor(EN_GRUNDLAST_PERZENTIL * count($werte)), count($werte) - 1);
+
+    return $werte[$idx] * 4.0;
 }
 
 /** Starkverbraucher-Schwellen (Spec §2): Stunde zählt als Lauf ab Tages-Ø·Faktor, max. N Läufe. */
@@ -574,6 +607,14 @@ function en_wetter_faktenblatt(array $fakten): string {
         $zeilen[] = "Heutiger Preis vs. Vorjahr (±3 Tage): " . en_wetter_pct_signed($p['heute_vs_vorjahr_pct']);
     }
 
+    $g = $fakten['grundlast'] ?? [];
+    if (($g['w24_kw'] ?? null) !== null) {
+        $zeilen[] = "Geschätzte Grundlast letzte 24 h: " . number_format($g['w24_kw'], 2, ',', '.') . " kW";
+    }
+    if (($g['w168_kw'] ?? null) !== null) {
+        $zeilen[] = "Geschätzte Grundlast letzte 168 h: " . number_format($g['w168_kw'], 2, ',', '.') . " kW";
+    }
+
     foreach (($fakten['auffaellig'] ?? []) as $text) {
         $zeilen[] = "Auffällig: {$text}";
     }
@@ -659,6 +700,12 @@ function en_wetter_template(array $fakten): string {
         }
     }
 
+    $w24Kw = $fakten['grundlast']['w24_kw'] ?? null;
+    if ($w24Kw !== null) {
+        $w24Txt = number_format($w24Kw, 2, ',', '.');
+        $saetze[] = "Deine geschätzte Grundlast liegt bei ~{$w24Txt} kW.";
+    }
+
     $aktuell = $fakten['stand']['aktuell'] ?? true;
     if ($aktuell === false) {
         $saetze[] = "Hinweis: noch nicht ganz aktuell — bitte die gestrigen Werte laden.";
@@ -698,6 +745,7 @@ function en_wetter_fakten_leer(): array {
             'heute' => $leeresProfil, 'morgen' => null,
             'heute_vs_ueblich_pct' => null, 'heute_vs_vorjahr_pct' => null, 'symbol' => 'wolke',
         ],
+        'grundlast'  => ['w24_kw' => null, 'w168_kw' => null],
         'auffaellig' => [],
         'vorschau'   => false,
     ];

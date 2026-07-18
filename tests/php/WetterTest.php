@@ -271,6 +271,35 @@ final class WetterTest extends TestCase {
         $this->assertNull($heute['guenstig_avg']);
     }
 
+    // ── en_wetter_grundlast ──────────────────────────────────────────────────
+
+    public function test_grundlast_zehntes_perzentil_mal_vier_und_fenstergrenzen(): void {
+        $bis = new DateTimeImmutable('2026-07-17 12:00:00');
+
+        // 10 Werte 1..10 kWh innerhalb des 24h-Fensters (bis-24h, bis].
+        foreach (range(1, 10) as $i) {
+            $ts = $bis->modify("-{$i} hour")->format('Y-m-d H:i:s');
+            $this->seedReading($ts, (float) $i, 10.0);
+        }
+        // Außerhalb des Fensters (>24h zurück) -> muss ignoriert werden; sonst
+        // würde der sehr niedrige Wert (0.01) das 10. Perzentil verfälschen.
+        $this->seedReading($bis->modify('-25 hour')->format('Y-m-d H:i:s'), 0.01, 10.0);
+        // consumed_kwh = 0 innerhalb des Fensters -> Filter consumed_kwh > 0 muss greifen.
+        $this->seedReading($bis->modify('-3 hour -5 minute')->format('Y-m-d H:i:s'), 0.0, 10.0);
+
+        $grundlast = en_wetter_grundlast($this->pdo, $bis, 24);
+
+        // 10 Werte sortiert 1..10, Index floor(0,10*10)=1 -> zweitkleinster Wert
+        // (2,0) -> Grundlast = 2,0 * 4 = 8,0 kW.
+        $this->assertEqualsWithDelta(8.0, $grundlast, 0.001);
+    }
+
+    public function test_grundlast_ohne_verbrauchszeilen_null(): void {
+        $grundlast = en_wetter_grundlast($this->pdo, new DateTimeImmutable('2026-07-17 12:00:00'), 24);
+
+        $this->assertNull($grundlast);
+    }
+
     public function test_wetter_fakten_buendelt_alle_bloecke(): void {
         $this->seedTag('2026-07-01', 10.0, 12.0);
         $this->seedTag('2026-07-16', 10.0, 12.0); // gestern (2026-07-17 - 1) hat Verbrauch -> aktuell=true
@@ -282,7 +311,10 @@ final class WetterTest extends TestCase {
         $this->assertArrayHasKey('verbrauch', $fakten);
         $this->assertArrayHasKey('disziplin', $fakten);
         $this->assertArrayHasKey('preis', $fakten);
+        $this->assertArrayHasKey('grundlast', $fakten);
         $this->assertArrayHasKey('auffaellig', $fakten);
+        $this->assertArrayHasKey('w24_kw', $fakten['grundlast']);
+        $this->assertArrayHasKey('w168_kw', $fakten['grundlast']);
         $this->assertSame('2026-07-16', $fakten['stand']['gestern']);
         $this->assertSame('2026-07-17', $fakten['stand']['heute']);
         $this->assertNull($fakten['stand']['morgen']);
@@ -378,6 +410,22 @@ final class WetterTest extends TestCase {
         $this->assertStringNotContainsString('-100 %', $blatt);
         $this->assertStringNotContainsString('Verbrauch letzte 7 Tage', $blatt);
         $this->assertStringNotContainsString('Verbrauch letzte 30 Tage', $blatt);
+    }
+
+    public function test_faktenblatt_zeigt_grundlast_zeilen_wenn_vorhanden(): void {
+        $fakten = en_wetter_fakten_leer();
+        $fakten['grundlast'] = ['w24_kw' => 0.15, 'w168_kw' => 0.144];
+
+        $blatt = en_wetter_faktenblatt($fakten);
+
+        $this->assertStringContainsString('Geschätzte Grundlast letzte 24 h: 0,15 kW', $blatt);
+        $this->assertStringContainsString('Geschätzte Grundlast letzte 168 h: 0,14 kW', $blatt);
+    }
+
+    public function test_faktenblatt_ohne_grundlast_zeile_wenn_null(): void {
+        $blatt = en_wetter_faktenblatt(en_wetter_fakten_leer());
+
+        $this->assertStringNotContainsString('Grundlast', $blatt);
     }
 
     // ── en_wetter_symbol ─────────────────────────────────────────────────────
@@ -800,6 +848,17 @@ final class WetterTest extends TestCase {
 
         $this->assertStringContainsString('Heute liegt der Strompreis', $text);
         $this->assertStringNotContainsString('Vorschau auf morgen', $text);
+    }
+
+    public function test_template_grundlast_satz_wenn_vorhanden(): void {
+        $fakten = $this->fiktiveFaktenLeer([
+            'grundlast' => ['w24_kw' => 0.15, 'w168_kw' => 0.14],
+        ]);
+
+        $text = en_wetter_template($fakten);
+
+        $this->assertStringContainsString('Grundlast', $text);
+        $this->assertStringContainsString('0,15', $text);
     }
 
     public function test_template_hinweis_wenn_nicht_aktuell(): void {
