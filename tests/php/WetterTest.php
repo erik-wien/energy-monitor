@@ -269,6 +269,29 @@ final class WetterTest extends TestCase {
         $this->assertNull($heute['guenstig_von']);
         $this->assertNull($heute['guenstig_bis']);
         $this->assertNull($heute['guenstig_avg']);
+        $this->assertSame([], $heute['stunden']);
+    }
+
+    public function test_heute_stunden_feld_enthaelt_die_geseedeten_stunden_aufsteigend(): void {
+        $this->seedHourReading('2026-07-17', 12, 5.0);
+        $this->seedHourReading('2026-07-17', 3, 22.0);
+        $this->seedHourReading('2026-07-17', 18, 9.5);
+
+        $heute = en_wetter_heute($this->pdo, '2026-07-17');
+
+        $this->assertSame([3, 12, 18], array_keys($heute['stunden']));
+        $this->assertEqualsWithDelta(22.0, $heute['stunden'][3], 0.001);
+        $this->assertEqualsWithDelta(5.0, $heute['stunden'][12], 0.001);
+        $this->assertEqualsWithDelta(9.5, $heute['stunden'][18], 0.001);
+    }
+
+    public function test_heute_stunden_feld_mittelt_mehrere_readings_pro_stunde(): void {
+        $this->seedReading('2026-07-17 12:00:00', 1.0, 10.0);
+        $this->seedReading('2026-07-17 12:15:00', 1.0, 20.0);
+
+        $heute = en_wetter_heute($this->pdo, '2026-07-17');
+
+        $this->assertEqualsWithDelta(15.0, $heute['stunden'][12], 0.001); // Ø(10,20)
     }
 
     // ── en_wetter_grundlast ──────────────────────────────────────────────────
@@ -867,6 +890,46 @@ final class WetterTest extends TestCase {
         $text = en_wetter_template($fakten);
 
         $this->assertStringContainsString('noch nicht ganz aktuell', $text);
+    }
+
+    // ── en_preisverlauf_svg (reine Funktion, keine DB) ──────────────────────
+
+    public function test_preisverlauf_svg_gueltiges_svg_mit_guenstigem_fenster_und_spitze(): void {
+        $stunden = [0 => 10.0, 6 => 8.0, 12 => 5.0, 18 => 22.0, 23 => 12.0];
+
+        $svg = en_preisverlauf_svg($stunden, 6, 13, [18], 'Preisverlauf heute');
+
+        $this->assertStringStartsWith('<svg', $svg);
+        $this->assertStringContainsString('</svg>', $svg);
+        $this->assertStringContainsString('role="img"', $svg);
+        $this->assertStringContainsString('aria-label="Preisverlauf heute"', $svg);
+        $this->assertStringContainsString('#68d391', $svg); // günstiges Fenster
+        $this->assertStringContainsString('<rect', $svg);
+        $this->assertStringContainsString('#63b3ed', $svg); // Preislinie
+        $this->assertStringContainsString('#e94560', $svg); // Spitzenmarker
+        $this->assertStringContainsString('<circle', $svg);
+    }
+
+    public function test_preisverlauf_svg_ohne_guenstiges_fenster_kein_gruenes_rechteck(): void {
+        $svg = en_preisverlauf_svg([0 => 10.0, 12 => 12.0], null, null, []);
+
+        $this->assertStringNotContainsString('<rect', $svg);
+        $this->assertStringNotContainsString('#68d391', $svg);
+    }
+
+    public function test_preisverlauf_svg_leeres_array_keine_daten_hinweis(): void {
+        $svg = en_preisverlauf_svg([], null, null, [], 'Preisverlauf heute');
+
+        $this->assertStringStartsWith('<svg', $svg);
+        $this->assertStringContainsString('keine Daten', $svg);
+        $this->assertStringContainsString('role="img"', $svg);
+        $this->assertStringNotContainsString('<polyline', $svg);
+    }
+
+    public function test_preisverlauf_svg_default_titel_wenn_leer(): void {
+        $svg = en_preisverlauf_svg([0 => 10.0, 1 => 11.0], null, null, []);
+
+        $this->assertStringContainsString('aria-label="Preisverlauf heute"', $svg);
     }
 
     // ── DB-Scaffolding (Muster wie InsightTest/CsvImporterTest) ─────────────

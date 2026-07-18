@@ -276,13 +276,16 @@ const EN_GUENSTIG_ANTEIL = 0.30;
  * günstiges Fenster = die längste zusammenhängende Folge aufeinanderfolgender
  * Stunden mit Ø-Spot ≤ Schwelle (min + (max−min)·EN_GUENSTIG_ANTEIL, unteres
  * 30 % des Tagesbandes). Bei gleicher Länge gewinnt der Lauf mit dem
- * niedrigeren Durchschnitt. Leerer Tag (keine Readings) → alle Werte null / [].
+ * niedrigeren Durchschnitt. `stunden` trägt das rohe Stunden-Aggregat
+ * (h => Ø-Spot ct/kWh, nur vorhandene Stunden 0–23, aufsteigend) durch, u. a.
+ * für en_preisverlauf_svg(). Leerer Tag (keine Readings) → alle Werte null / [].
  */
 function en_wetter_heute(PDO $pdo, string $latest): array {
     $result = [
         'datum' => $latest, 'avg' => null, 'max' => null, 'max_h' => null,
         'min' => null, 'min_h' => null, 'spitzen' => [],
         'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+        'stunden' => [],
     ];
 
     $stmt = $pdo->prepare(
@@ -354,8 +357,84 @@ function en_wetter_heute(PDO $pdo, string $latest): array {
     $result['guenstig_von'] = $guenstigVon;
     $result['guenstig_bis'] = $guenstigBis;
     $result['guenstig_avg'] = $guenstigAvg;
+    $result['stunden']      = $stunden; // bereits aufsteigend (SQL ORDER BY h).
 
     return $result;
+}
+
+/** Farben des Preisverlauf-SVG (identisch mit den Chart-/Theme-Tokens --color-blue/--color-green/#e94560, inc/_chart_page.php). */
+const EN_PREISVERLAUF_FARBE_LINIE    = '#63b3ed';
+const EN_PREISVERLAUF_FARBE_GUENSTIG = '#68d391';
+const EN_PREISVERLAUF_FARBE_SPITZE   = '#e94560';
+
+/**
+ * en_preisverlauf_svg() — kompaktes Liniendiagramm-SVG des heutigen
+ * Preisverlaufs (Dashboard-Kachel; Tab-UI ist ein separater Task). $stunden
+ * im Format von en_wetter_heute()['stunden'] (h => Ø-Spot ct/kWh). x-Achse
+ * ist fest auf Stunde 0..23 skaliert (nicht nur die vorhandenen Stunden),
+ * damit Positionen stabil bleiben, auch wenn einzelne Stunden fehlen.
+ *
+ * - Günstiges Fenster [$guenstigVon, $guenstigBis) (exklusive bis) als
+ *   grün hinterlegtes Rechteck, niedrige Deckkraft (wie die Verbrauch-Linie
+ *   im Chart, s. inc/_chart_page.php).
+ * - $spitzen (Liste von Stunden) als rote Punkt-Marker auf der Preislinie.
+ * - Preislinie in Tarif-Blau, Stroke ~2.
+ * - Dezente Stundenbeschriftung (0/6/12/18/23 Uhr).
+ *
+ * Leeres $stunden → SVG mit "keine Daten"-Hinweistext (nie leerer String,
+ * nie Fehler/Warning — kein min()/max() auf leerem Array).
+ */
+function en_preisverlauf_svg(array $stunden, ?int $guenstigVon, ?int $guenstigBis, array $spitzen = [], string $titel = ''): string {
+    $w = 640; $h = 180;
+    $label = htmlspecialchars($titel !== '' ? $titel : 'Preisverlauf heute', ENT_QUOTES, 'UTF-8');
+
+    if (!$stunden) {
+        return '<svg class="preisverlauf" viewBox="0 0 ' . $w . ' ' . $h . '" width="100%" role="img" aria-label="' . $label . '">'
+            . '<text x="' . ($w / 2) . '" y="' . ($h / 2) . '" text-anchor="middle" fill="currentColor" opacity="0.5" font-size="14">keine Daten</text></svg>';
+    }
+
+    ksort($stunden);
+    $werte = array_map('floatval', array_values($stunden));
+    $min = min($werte); $max = max($werte);
+    $span = ($max - $min) ?: 1.0; // flacher Verlauf → keine Division durch 0
+
+    $padTop = 10; $padBottom = 22; $padX = 6;
+    $plotW  = $w - 2 * $padX;
+    $plotH  = $h - $padTop - $padBottom;
+
+    $xFor = fn(int $stunde): float => round($padX + $stunde / 23 * $plotW, 2);
+    $yFor = fn(float $v): float => round($padTop + (1 - ($v - $min) / $span) * $plotH, 2);
+
+    $svg = '<svg class="preisverlauf" viewBox="0 0 ' . $w . ' ' . $h . '" width="100%" role="img" aria-label="' . $label . '">';
+
+    if ($guenstigVon !== null && $guenstigBis !== null && $guenstigBis > $guenstigVon) {
+        $x1 = $xFor($guenstigVon);
+        $x2 = $xFor($guenstigBis);
+        $svg .= '<rect x="' . $x1 . '" y="' . $padTop . '" width="' . round($x2 - $x1, 2) . '" height="' . $plotH
+            . '" fill="' . EN_PREISVERLAUF_FARBE_GUENSTIG . '" fill-opacity="0.12" />';
+    }
+
+    $pts = [];
+    foreach ($stunden as $stunde => $v) {
+        $pts[] = $xFor((int) $stunde) . ',' . $yFor((float) $v);
+    }
+    $svg .= '<polyline points="' . implode(' ', $pts) . '" fill="none" stroke="' . EN_PREISVERLAUF_FARBE_LINIE
+        . '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />';
+
+    foreach ($spitzen as $sh) {
+        $sh = (int) $sh;
+        if (!isset($stunden[$sh])) continue;
+        $svg .= '<circle cx="' . $xFor($sh) . '" cy="' . $yFor((float) $stunden[$sh]) . '" r="3.5" fill="'
+            . EN_PREISVERLAUF_FARBE_SPITZE . '" />';
+    }
+
+    foreach ([0, 6, 12, 18, 23] as $marke) {
+        $svg .= '<text x="' . $xFor($marke) . '" y="' . ($h - 6) . '" text-anchor="middle" font-size="10"'
+            . ' fill="currentColor" opacity="0.5">' . $marke . '</text>';
+    }
+
+    $svg .= '</svg>';
+    return $svg;
 }
 
 /** Gibt es mind. eine `readings`-Zeile am Tag $tag? (Prüft, ob Spotpreise für morgen schon da sind.) */
@@ -733,6 +812,7 @@ function en_wetter_fakten_leer(): array {
         'datum' => $heute, 'avg' => null, 'max' => null, 'max_h' => null,
         'min' => null, 'min_h' => null, 'spitzen' => [],
         'guenstig_von' => null, 'guenstig_bis' => null, 'guenstig_avg' => null,
+        'stunden' => [],
     ];
     return [
         'stand'     => ['gestern' => $gestern, 'heute' => $heute, 'morgen' => null, 'aktuell' => false],
