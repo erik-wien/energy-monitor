@@ -313,8 +313,8 @@ final class WetterTest extends TestCase {
         $grundlast = en_wetter_grundlast($this->pdo, $bis, 24);
 
         // 10 Werte sortiert 1..10, Index floor(0,10*10)=1 -> zweitkleinster Wert
-        // (2,0) -> Grundlast = 2,0 * 4 = 8,0 kW.
-        $this->assertEqualsWithDelta(8.0, $grundlast, 0.001);
+        // (2,0) -> Grundlast = 2,0 * 4000 = 8000 W.
+        $this->assertEqualsWithDelta(8000.0, $grundlast, 0.001);
     }
 
     public function test_grundlast_ohne_verbrauchszeilen_null(): void {
@@ -336,8 +336,8 @@ final class WetterTest extends TestCase {
         $this->assertArrayHasKey('preis', $fakten);
         $this->assertArrayHasKey('grundlast', $fakten);
         $this->assertArrayHasKey('auffaellig', $fakten);
-        $this->assertArrayHasKey('w24_kw', $fakten['grundlast']);
-        $this->assertArrayHasKey('w168_kw', $fakten['grundlast']);
+        $this->assertArrayHasKey('w24_w', $fakten['grundlast']);
+        $this->assertArrayHasKey('w168_w', $fakten['grundlast']);
         $this->assertSame('2026-07-16', $fakten['stand']['gestern']);
         $this->assertSame('2026-07-17', $fakten['stand']['heute']);
         $this->assertNull($fakten['stand']['morgen']);
@@ -437,12 +437,12 @@ final class WetterTest extends TestCase {
 
     public function test_faktenblatt_zeigt_grundlast_zeilen_wenn_vorhanden(): void {
         $fakten = en_wetter_fakten_leer();
-        $fakten['grundlast'] = ['w24_kw' => 0.15, 'w168_kw' => 0.144];
+        $fakten['grundlast'] = ['w24_w' => 150.0, 'w168_w' => 144.0];
 
         $blatt = en_wetter_faktenblatt($fakten);
 
-        $this->assertStringContainsString('Geschätzte Grundlast letzte 24 h: 0,15 kW', $blatt);
-        $this->assertStringContainsString('Geschätzte Grundlast letzte 168 h: 0,14 kW', $blatt);
+        $this->assertStringContainsString('Geschätzte Grundlast letzte 24 h: 150 W', $blatt);
+        $this->assertStringContainsString('Geschätzte Grundlast letzte 168 h: 144 W', $blatt);
     }
 
     public function test_faktenblatt_ohne_grundlast_zeile_wenn_null(): void {
@@ -875,13 +875,13 @@ final class WetterTest extends TestCase {
 
     public function test_template_grundlast_satz_wenn_vorhanden(): void {
         $fakten = $this->fiktiveFaktenLeer([
-            'grundlast' => ['w24_kw' => 0.15, 'w168_kw' => 0.14],
+            'grundlast' => ['w24_w' => 150.0, 'w168_w' => 140.0],
         ]);
 
         $text = en_wetter_template($fakten);
 
         $this->assertStringContainsString('Grundlast', $text);
-        $this->assertStringContainsString('0,15', $text);
+        $this->assertStringContainsString('150', $text);
     }
 
     public function test_template_hinweis_wenn_nicht_aktuell(): void {

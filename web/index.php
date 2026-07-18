@@ -72,6 +72,10 @@ function fmt_eur($v) { return '<span class="unit">€</span> ' . number_format($
 function fmt_ct($v)  { return number_format($v, 1, ',', '.') . ' <span class="unit">ct/kWh</span>'; }
 function fmt_ct_plain($v) { return number_format($v, 1, ',', '.') . ' ct/kWh'; }
 function kpi_eff($eur, $kwh) { return $kwh != 0.0 ? $eur / $kwh * 100 : 0.0; }
+/** Deutsches Wochentagskürzel (So–Sa) für ein Y-m-d-Datum. */
+function en_de_wochentag(string $ymd): string {
+    return ['Sun'=>'So','Mon'=>'Mo','Tue'=>'Di','Wed'=>'Mi','Thu'=>'Do','Fri'=>'Fr','Sat'=>'Sa'][date('D', strtotime($ymd))] ?? '';
+}
 
 /** Delta-Chip-Markup (▲/▼/·). $sem=false → immer neutral eingefärbt (nur Richtung/Wert). */
 function en_chip(array $d, bool $sem = true): string {
@@ -187,6 +191,7 @@ $preisverlaufHeuteSvg = en_preisverlauf_svg(
     'Preisverlauf heute'
 );
 $preisverlaufMorgenSvg = null;
+$plMorgenLabel = ''; $plMorgenFakten = null; $plMorgen = null;
 $plSlot = en_wetter_slot(new DateTimeImmutable());
 if (str_ends_with($plSlot, '#nach')) {
     $plMorgen = date('Y-m-d', strtotime('+1 day'));
@@ -199,8 +204,28 @@ if (str_ends_with($plSlot, '#nach')) {
             $plMorgenFakten['spitzen'] ?? [],
             'Vorschau morgen'
         );
+        $plMorgenLabel = trim(en_de_wochentag($plMorgen) . ' ' . date('d.m.Y', strtotime($plMorgen)));
     }
 }
+$plHeuteLabel = trim(en_de_wochentag($plHeute) . ' ' . date('d.m.Y', strtotime($plHeute)));
+/**
+ * Info-Zeile unter dem Preisverlauf: das günstige Fenster (Uhrzeit-Zeitraum)
+ * plus dessen Netto-/Bruttopreis (raten-basiert aus dem günstigen-Fenster-Ø,
+ * verbrauchsunabhängig — heute/morgen haben noch keinen Verbrauch).
+ */
+$plInfoZeile = static function (PDO $pdo, string $tag, ?array $f): string {
+    if ($f === null) return '';
+    $von = $f['guenstig_von'] ?? null; $bis = $f['guenstig_bis'] ?? null;
+    $rate = en_preis_rate($pdo, $tag, $f['guenstig_avg'] ?? $f['avg'] ?? null);
+    $teile = [];
+    if ($von !== null && $bis !== null) {
+        $teile[] = 'Günstig ' . (int) $von . '–' . (int) $bis . ' Uhr';
+    }
+    if ($rate !== null) {
+        $teile[] = 'netto ' . fmt_ct($rate['netto']) . ' · brutto ' . fmt_ct($rate['brutto']);
+    }
+    return $teile ? '<p class="preisverlauf-rate">' . implode(' · ', $teile) . '</p>' : '';
+};
 ?>
 <?php render_page_head('Energie'); render_header('index'); ?>
 <main id="main-content" tabindex="-1">
@@ -255,11 +280,13 @@ if (str_ends_with($plSlot, '#nach')) {
 
         <div class="tab-panel" role="tabpanel" id="tab-panel-preisverlauf" aria-labelledby="tab-btn-preisverlauf" hidden>
             <section class="preisverlauf-panel" aria-label="Preisverlauf">
-                <h3 class="preisverlauf-subtitel">Heute</h3>
+                <h3 class="preisverlauf-subtitel">Heute · <?= htmlspecialchars($plHeuteLabel) ?></h3>
                 <?= $preisverlaufHeuteSvg ?>
+                <?= $plInfoZeile($pdo, $plHeute, $plHeuteFakten) ?>
                 <?php if ($preisverlaufMorgenSvg !== null): ?>
-                <h3 class="preisverlauf-subtitel">Morgen</h3>
+                <h3 class="preisverlauf-subtitel">Morgen · <?= htmlspecialchars($plMorgenLabel) ?></h3>
                 <?= $preisverlaufMorgenSvg ?>
+                <?= $plInfoZeile($pdo, $plMorgen, $plMorgenFakten) ?>
                 <?php endif; ?>
             </section>
         </div>

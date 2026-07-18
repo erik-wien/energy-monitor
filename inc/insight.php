@@ -135,6 +135,41 @@ function en_preis_komposition(PDO $pdo, string $from, string $to): array {
 }
 
 /**
+ * en_preis_rate() — raten-basierte Netto/Brutto-Umrechnung eines Ø-Spotpreises
+ * für einen Tag (ct/kWh), unabhängig vom Verbrauch (anders als
+ * en_preis_komposition(), das verbrauchsgewichtet ist und für Tage OHNE
+ * Verbrauch — z. B. heute/morgen — 0 liefern würde). Nutzt die für den Tag
+ * gültige tariff_config. Definitionen konsistent zur Komposition:
+ *   netto  = (Spot + Aufschlag + Abgaben) + Fixkosten-Netto
+ *   brutto = netto × (1 + Gebrauchsabgabe + MwSt)
+ * $avgSpot null → null.
+ *
+ * @return array{spot: float, netto: float, brutto: float}|null
+ */
+function en_preis_rate(PDO $pdo, string $tag, ?float $avgSpot): ?array {
+    if ($avgSpot === null) return null;
+    $stmt = $pdo->prepare(
+        "SELECT provider_surcharge_ct psc, electricity_tax_ct etc, renewable_tax_ct rtc,
+                consumption_tax_rate gbr, vat_rate vatr,
+                meter_fee_eur mfee, renewable_fee_eur rfee, yearly_kwh_estimate ykwh
+         FROM tariff_config
+         WHERE valid_from = (SELECT MAX(valid_from) FROM tariff_config WHERE valid_from <= ?)"
+    );
+    $stmt->execute([$tag]);
+    $t = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $psc = (float)($t['psc'] ?? 0); $etc = (float)($t['etc'] ?? 0); $rtc = (float)($t['rtc'] ?? 0);
+    $gbr = (float)($t['gbr'] ?? 0); $vatr = (float)($t['vatr'] ?? 0);
+    $mfee = (float)($t['mfee'] ?? 0); $rfee = (float)($t['rfee'] ?? 0);
+    $ykwh = max(1.0, (float)($t['ykwh'] ?? 3000));
+
+    $netVar = $avgSpot + $psc + $etc + $rtc;                 // net-variabel ct/kWh
+    $fixNet = ($mfee + $rfee) / $ykwh * 100;                 // Fixkosten netto ct/kWh
+    $netto  = $netVar + $fixNet;
+    $brutto = $netto * (1 + $gbr + $vatr);
+    return ['spot' => $avgSpot, 'netto' => $netto, 'brutto' => $brutto];
+}
+
+/**
  * en_effektiv_serie() — Tagesreihe des effektiven Preises (cost_brutto/kwh,
  * ct/kWh) einer Periode, für Sparklines. Tage mit consumed_kwh<=0 werden
  * übersprungen (Division durch 0).

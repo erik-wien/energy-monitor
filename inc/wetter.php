@@ -34,7 +34,7 @@ require_once __DIR__ . '/ai_client.php';
  *   disziplin: array{laeufe: array, bewertung: ?string},
  *   preis: array{heute: array, morgen: ?array, heute_vs_ueblich_pct: ?float,
  *              heute_vs_vorjahr_pct: ?float, symbol: string},
- *   grundlast: array{w24_kw: ?float, w168_kw: ?float},
+ *   grundlast: array{w24_w: ?float, w168_w: ?float},
  *   auffaellig: string[],
  *   vorschau: bool
  * }
@@ -59,8 +59,8 @@ function en_wetter_fakten(PDO $pdo, ?DateTimeImmutable $now = null, ?string $pro
         'disziplin'  => $disziplin,
         'preis'      => $preis,
         'grundlast'  => [
-            'w24_kw'  => en_wetter_grundlast($pdo, $now, 24),
-            'w168_kw' => en_wetter_grundlast($pdo, $now, 168),
+            'w24_w'  => en_wetter_grundlast($pdo, $now, 24),
+            'w168_w' => en_wetter_grundlast($pdo, $now, 168),
         ],
         'auffaellig' => en_wetter_auffaelligkeiten($pdo, $gestern, $preis['heute']),
         'vorschau'   => $profilMorgen !== null,
@@ -171,10 +171,10 @@ function en_wetter_verbrauch(PDO $pdo, string $gestern): array {
 const EN_GRUNDLAST_PERZENTIL = 0.10;
 
 /**
- * en_wetter_grundlast() — schätzt die Grundlast in kW über das Fenster
+ * en_wetter_grundlast() — schätzt die Grundlast in W über das Fenster
  * `(bis − $stunden Stunden, bis]` aus `readings.consumed_kwh` (Spec Änderung
  * D): 10. Perzentil (EN_GRUNDLAST_PERZENTIL) der positiven 15-Min-Intervall-
- * Verbrauchswerte in diesem Fenster, ×4 (15-Min-Intervall → kW). Perzentil
+ * Verbrauchswerte in diesem Fenster, ×4000 (15-Min-Intervall → W). Perzentil
  * statt Minimum, um 0-/Mess-Ausreißer zu dämpfen. Keine Zeilen im Fenster
  * (z. B. `consumed_kwh <= 0` überall oder keine Readings) → null.
  */
@@ -192,7 +192,8 @@ function en_wetter_grundlast(PDO $pdo, DateTimeImmutable $bis, int $stunden): ?f
     $werte = array_map('floatval', $werte);
     $idx   = min((int) floor(EN_GRUNDLAST_PERZENTIL * count($werte)), count($werte) - 1);
 
-    return $werte[$idx] * 4.0;
+    // kWh je 15-Min-Intervall → W: ×4 (auf Stunde) ×1000 (kW→W) = ×4000.
+    return $werte[$idx] * 4000.0;
 }
 
 /** Starkverbraucher-Schwellen (Spec §2): Stunde zählt als Lauf ab Tages-Ø·Faktor, max. N Läufe. */
@@ -687,11 +688,11 @@ function en_wetter_faktenblatt(array $fakten): string {
     }
 
     $g = $fakten['grundlast'] ?? [];
-    if (($g['w24_kw'] ?? null) !== null) {
-        $zeilen[] = "Geschätzte Grundlast letzte 24 h: " . number_format($g['w24_kw'], 2, ',', '.') . " kW";
+    if (($g['w24_w'] ?? null) !== null) {
+        $zeilen[] = "Geschätzte Grundlast letzte 24 h: " . number_format($g['w24_w'], 0, ',', '.') . " W";
     }
-    if (($g['w168_kw'] ?? null) !== null) {
-        $zeilen[] = "Geschätzte Grundlast letzte 168 h: " . number_format($g['w168_kw'], 2, ',', '.') . " kW";
+    if (($g['w168_w'] ?? null) !== null) {
+        $zeilen[] = "Geschätzte Grundlast letzte 168 h: " . number_format($g['w168_w'], 0, ',', '.') . " W";
     }
 
     foreach (($fakten['auffaellig'] ?? []) as $text) {
@@ -779,10 +780,10 @@ function en_wetter_template(array $fakten): string {
         }
     }
 
-    $w24Kw = $fakten['grundlast']['w24_kw'] ?? null;
-    if ($w24Kw !== null) {
-        $w24Txt = number_format($w24Kw, 2, ',', '.');
-        $saetze[] = "Deine geschätzte Grundlast liegt bei ~{$w24Txt} kW.";
+    $w24W = $fakten['grundlast']['w24_w'] ?? null;
+    if ($w24W !== null) {
+        $w24Txt = number_format($w24W, 0, ',', '.');
+        $saetze[] = "Deine geschätzte Grundlast liegt bei ~{$w24Txt} W.";
     }
 
     $aktuell = $fakten['stand']['aktuell'] ?? true;
@@ -825,7 +826,7 @@ function en_wetter_fakten_leer(): array {
             'heute' => $leeresProfil, 'morgen' => null,
             'heute_vs_ueblich_pct' => null, 'heute_vs_vorjahr_pct' => null, 'symbol' => 'wolke',
         ],
-        'grundlast'  => ['w24_kw' => null, 'w168_kw' => null],
+        'grundlast'  => ['w24_w' => null, 'w168_w' => null],
         'auffaellig' => [],
         'vorschau'   => false,
     ];

@@ -63,7 +63,7 @@ function invoice_breakdown(array &$rows, bool $is_daily,
 }
 
 // Grundlast-Tageslinie (Spec Teil 2, 2026-07-18): 10. Perzentil (EN_GRUNDLAST_PERZENTIL,
-// inc/wetter.php) der positiven 15-Min-consumed_kwh je Gruppe (Tag oder Monat) × 4 (=kW).
+// inc/wetter.php) der positiven 15-Min-consumed_kwh je Gruppe (Tag oder Monat) × 4000 (=W).
 // $groupExpr gruppiert per SQL (Tag: DATE(ts); Monat: DATE_FORMAT(ts,'%Y-%m')), $keys ist
 // die schon vorhandene labels-/dates-Reihenfolge des Blocks; fehlender Schlüssel -> null.
 function en_grundlast_by_key(PDO $pdo, string $start, string $end, string $groupExpr, array $keys): array
@@ -84,7 +84,7 @@ function en_grundlast_by_key(PDO $pdo, string $start, string $end, string $group
         if (!$vals) { $out[] = null; continue; }
         sort($vals);
         $idx = min((int) floor(EN_GRUNDLAST_PERZENTIL * count($vals)), count($vals) - 1);
-        $out[] = $vals[$idx] * 4.0;
+        $out[] = $vals[$idx] * 4000.0;
     }
     return $out;
 }

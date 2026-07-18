@@ -118,11 +118,11 @@ fetch(<?= json_encode($api_url) ?>)
       },
     ];
 
-    // Grundlast (kW): eigene versteckte Achse y4, damit die Linie unabhängig
+    // Grundlast (W): eigene versteckte Achse y4, damit die Linie unabhängig
     // vom Verbrauchsmaßstab gut sichtbar bleibt. Nur ab Wochenansicht (Spec Teil 2).
     const grundlastDatasets = isDailyPage ? [] : [
       {
-        type: 'line', label: 'Grundlast (kW)', data: data.grundlast,
+        type: 'line', label: 'Grundlast (W)', data: data.grundlast,
         borderColor: '#ed8936', backgroundColor: 'rgba(237,137,54,0.1)',
         borderWidth: 2, pointRadius: ptR, tension: 0.3, yAxisID: 'y4', order: 6,
       },
@@ -587,7 +587,7 @@ document.getElementById('print-btn').addEventListener('click', () => {
       else if (ds.label === 'Tarif (ct/kWh)')      meta.hidden = !vis.tariff;
       else if (ds.label.startsWith('_tariff'))      meta.hidden = !vis.minmax;
       else if (ds.label === 'Effektiv netto (ct/kWh)') meta.hidden = !vis.eff;
-      else if (ds.label === 'Grundlast (kW)')       meta.hidden = !vis.grundlast;
+      else if (ds.label === 'Grundlast (W)')       meta.hidden = !vis.grundlast;
       else if (ds.label === 'Ø Verbrauch (kWh)')   meta.hidden = !vis.hkwh;
       else if (ds.label.startsWith('_hkwh'))        meta.hidden = !vis.hkband;
     });
