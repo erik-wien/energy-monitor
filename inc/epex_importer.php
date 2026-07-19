@@ -40,6 +40,12 @@ function php_fetch_epex(PDO $pdo, int $year, int $month): array {
         if ($body === false || $err !== '') {
             throw new RuntimeException('curl: ' . ($err ?: 'unbekannter Fehler'));
         }
+        if ($code === 204) {
+            // Kein Inhalt = die Quelle hat für diesen Monat keine Spotpreise
+            // (z. B. Monate vor Datenbeginn). Kein Fehler — sonst würde jeder
+            // Cron-Lauf denselben unerfüllbaren Monat als Fehler loggen.
+            return ['rows' => 0, 'log' => sprintf('%d-%02d: keine Quelldaten (HTTP 204)', $year, $month)];
+        }
         if ($code !== 200) {
             throw new RuntimeException('HTTP ' . $code . ' von API erhalten');
         }
@@ -93,15 +99,19 @@ function php_fetch_epex(PDO $pdo, int $year, int $month): array {
  * @return array ['rows' => int, 'months' => int, 'log' => string]
  */
 function php_fetch_missing_epex(PDO $pdo): array {
-    // Months with any consumption slot where spot_ct is still missing/zero.
-    // AVG(spot_ct) = 0 would miss partial gaps (e.g. a mid-month import where
-    // earlier slots have prices but later ones don't).
+    // Nur Monate OHNE jeglichen echten Spotpreis (nie befüllt) — NICHT Monate
+    // mit einzelnen 0-Slots: spot_ct = 0 (und negativ) ist ein GÜLTIGER Preis
+    // (0-/Minuspreise kommen real vor). Die frühere Bedingung `spot_ct = 0 OR
+    // IS NULL > 0` flaggte jeden Monat mit auch nur einer echten 0-Viertelstunde
+    // dauerhaft -> der Cron re-importierte längst vollständige Monate bei jedem
+    // Lauf. `SUM(spot_ct <> 0) = 0` = kein einziger Nicht-Null-Spot -> wirklich
+    // unbefüllt. (Der laufende Monat wird ohnehin proaktiv geholt.)
     $missing = $pdo->query(
         "SELECT YEAR(ts) AS y, MONTH(ts) AS m
          FROM readings
          WHERE consumed_kwh > 0
          GROUP BY y, m
-         HAVING SUM(spot_ct = 0 OR spot_ct IS NULL) > 0
+         HAVING SUM(spot_ct IS NOT NULL AND spot_ct <> 0) = 0
          ORDER BY y, m"
     )->fetchAll(PDO::FETCH_ASSOC);
 
